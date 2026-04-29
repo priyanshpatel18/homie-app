@@ -1,159 +1,95 @@
-# Turborepo starter
+# Homie App
 
-This Turborepo starter is maintained by the Turborepo core team.
+Homie App is a [Turborepo](https://turborepo.dev/) monorepo for **HOMIE** — Solana-focused product work aligned with the Eitherway × Frontier hackathon track (integrations like DFlow, Kamino, Jupiter, and partner stacks). It hosts the main web frontend plus shared UI and tooling packages.
 
-## Using this example
+## Monorepo structure
 
-Run the following command:
+| Directory | What it contains | Start here |
+| --- | --- | --- |
+| [`apps/frontend/`](./apps/frontend) | Next.js app (App Router) — primary Homie web UI | [`apps/frontend/README.md`](./apps/frontend/README.md) |
+| [`packages/ui/`](./packages/ui) | Shared React component library (`@repo/ui`) | [`packages/ui/`](./packages/ui) |
+| [`packages/eslint-config/`](./packages/eslint-config) | ESLint presets (`@repo/eslint-config`) | [`packages/eslint-config/README.md`](./packages/eslint-config/README.md) |
+| [`packages/typescript-config/`](./packages/typescript-config) | Shared `tsconfig` bases (`@repo/typescript-config`) | [`packages/typescript-config/`](./packages/typescript-config) |
 
-```sh
-npx create-turbo@latest
+**Package manager:** `pnpm` (see root `packageManager` in [`package.json`](./package.json)). **Task runner:** Turborepo (`turbo`).
+
+## Related folders in the HOMIE repo
+
+From the repository root, HOMIE also includes (not part of this Turborepo):
+
+| Path | Notes |
+| --- | --- |
+| [`../homie-redirects/`](../homie-redirects) | Redirect / edge app (separate package) |
+| [`../homie-mobile/`](../homie-mobile) | Mobile app and related server code |
+
+This file documents **`homie-app`** only.
+
+## Quick start (contributors)
+
+1. Install dependencies (from this directory):
+
+   ```bash
+   pnpm install
+   ```
+
+2. Run all dev tasks (or scope to the frontend):
+
+   ```bash
+   pnpm dev
+   ```
+
+   ```bash
+   pnpm dev --filter=frontend
+   ```
+
+3. Open the app: by default the Next.js dev server serves at [http://localhost:3000](http://localhost:3000) when only `frontend` is running.
+
+For **Vercel** (or similar) monorepo deploys, set the project **Root Directory** to `apps/frontend` (or deploy the whole repo and filter the app in the platform’s UI).
+
+## Common commands
+
+### Root (`homie-app/`)
+
+```bash
+pnpm install
+pnpm dev
+pnpm build
+pnpm lint
+pnpm check-types
+pnpm format
 ```
 
-## What's inside?
+Run a task for one package:
 
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```bash
+pnpm dev --filter=frontend
+pnpm build --filter=frontend
+pnpm lint --filter=@repo/ui
 ```
 
-Without global `turbo`, use your package manager:
+### Frontend (`apps/frontend/`)
 
-```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+```bash
+cd apps/frontend
+pnpm dev
+pnpm build
+pnpm lint
+pnpm start
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### Shared UI (`packages/ui/`)
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
+```bash
+cd packages/ui
+pnpm lint
+pnpm check-types
 ```
 
-Without global `turbo`:
+## Documentation and context
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+- Hackathon / partner context: [`../SIDETRACK.md`](../SIDETRACK.md), [`../JUP_SIDETRACK.md`](../JUP_SIDETRACK.md) (Eitherway / Jupiter sidetracks).
+- Product planning and DX notes at repo root: [`../ROADMAP.md`](../ROADMAP.md), [`../DAYS.md`](../DAYS.md), [`../DX-REPORT.md`](../DX-REPORT.md), [`../BACKLOG.md`](../BACKLOG.md).
 
-### Develop
+## Requirements
 
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- **Node.js** `>= 18` (see root `engines` in [`package.json`](./package.json)).
