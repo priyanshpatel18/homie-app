@@ -1,95 +1,72 @@
 # Homie App
 
-Homie App is a [Turborepo](https://turborepo.dev/) monorepo for **HOMIE** — Solana-focused product work aligned with the Eitherway × Frontier hackathon track (integrations like DFlow, Kamino, Jupiter, and partner stacks). It hosts the main web frontend plus shared UI and tooling packages.
+Homie App is a [Turborepo](https://turborepo.dev/) monorepo for **HOMIE**, the
+Solana-focused product workspace built for the Eitherway × Frontier hackathon
+track. It hosts the primary Homie web frontend and the workspace packages it
+will grow into (DFlow, Kamino, Jupiter, and other partner integrations).
 
-## Monorepo structure
+## Monorepo Structure
 
 | Directory | What it contains | Start here |
 | --- | --- | --- |
-| [`apps/frontend/`](./apps/frontend) | Next.js app (App Router) — primary Homie web UI | [`apps/frontend/README.md`](./apps/frontend/README.md) |
-| [`packages/ui/`](./packages/ui) | Shared React component library (`@repo/ui`) | [`packages/ui/`](./packages/ui) |
-| [`packages/eslint-config/`](./packages/eslint-config) | ESLint presets (`@repo/eslint-config`) | [`packages/eslint-config/README.md`](./packages/eslint-config/README.md) |
-| [`packages/typescript-config/`](./packages/typescript-config) | Shared `tsconfig` bases (`@repo/typescript-config`) | [`packages/typescript-config/`](./packages/typescript-config) |
+| [`frontend/`](./frontend) | Next.js (App Router) Homie web frontend | [`frontend/README.md`](./frontend/README.md) |
+| [`packages/`](./packages) | Shared workspace libraries (empty for now; domain packages land here) | [`packages/`](./packages) |
 
-**Package manager:** `pnpm` (see root `packageManager` in [`package.json`](./package.json)). **Task runner:** Turborepo (`turbo`).
+**Package manager:** `pnpm` (see `packageManager` in [`package.json`](./package.json)).
+**Task runner:** Turborepo.
 
-## Related folders in the HOMIE repo
+## Quick Start (Contributors)
 
-From the repository root, HOMIE also includes (not part of this Turborepo):
-
-| Path | Notes |
-| --- | --- |
-| [`../homie-redirects/`](../homie-redirects) | Redirect / edge app (separate package) |
-| [`../homie-mobile/`](../homie-mobile) | Mobile app and related server code |
-
-This file documents **`homie-app`** only.
-
-## Quick start (contributors)
-
-1. Install dependencies (from this directory):
-
+1. Install dependencies:
    ```bash
    pnpm install
    ```
-
-2. Run all dev tasks (or scope to the frontend):
-
+2. Run the frontend in dev:
    ```bash
-   pnpm dev
+   pnpm frontend:dev
    ```
+3. Open [http://localhost:3000](http://localhost:3000).
 
-   ```bash
-   pnpm dev --filter=frontend
-   ```
+For Vercel monorepo deploys, set the project **Root Directory** to `frontend`.
 
-3. Open the app: by default the Next.js dev server serves at [http://localhost:3000](http://localhost:3000) when only `frontend` is running.
+## Common Commands
 
-For **Vercel** (or similar) monorepo deploys, set the project **Root Directory** to `apps/frontend` (or deploy the whole repo and filter the app in the platform’s UI).
-
-## Common commands
-
-### Root (`homie-app/`)
+### Root
 
 ```bash
 pnpm install
-pnpm dev
+pnpm frontend:dev
+pnpm frontend:build
+pnpm frontend:lint
+pnpm frontend:start
 pnpm build
 pnpm lint
 pnpm check-types
 pnpm format
 ```
 
-Run a task for one package:
+### Frontend (`/frontend`)
 
 ```bash
-pnpm dev --filter=frontend
-pnpm build --filter=frontend
-pnpm lint --filter=@repo/ui
-```
-
-### Frontend (`apps/frontend/`)
-
-```bash
-cd apps/frontend
 pnpm dev
 pnpm build
 pnpm lint
 pnpm start
 ```
 
-### Shared UI (`packages/ui/`)
+## Commit and PR Conventions
 
-```bash
-cd packages/ui
-pnpm lint
-pnpm check-types
+Use [Conventional Commits](https://www.conventionalcommits.org/) for commit
+messages and PR titles. Format:
+
+```
+type(scope): short description
 ```
 
-## Documentation and context
-
-- Hackathon / partner context: [`../SIDETRACK.md`](../SIDETRACK.md), [`../JUP_SIDETRACK.md`](../JUP_SIDETRACK.md) (Eitherway / Jupiter sidetracks).
-- Product planning and DX notes at repo root: [`../ROADMAP.md`](../ROADMAP.md), [`../DAYS.md`](../DAYS.md), [`../DX-REPORT.md`](../DX-REPORT.md), [`../BACKLOG.md`](../BACKLOG.md).
+Allowed types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `perf`,
+`test`, `build`, `ci`, `revert`.
 
 ## Requirements
 
-- **Node.js** `>= 18` (see root `engines` in [`package.json`](./package.json)).
+- **Node.js** `>= 18` (see `engines` in [`package.json`](./package.json))
+- **pnpm** `9.x`
