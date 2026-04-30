@@ -1,6 +1,5 @@
 packages:
   - "frontend"
-  - "mobile"
   - "server"
   - "packages/*"
   - "sdk/*"

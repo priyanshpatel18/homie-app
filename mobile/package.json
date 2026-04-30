@@ -12,7 +12,7 @@
     "build": "echo 'mobile is built via eas build (native) or expo run:ios/android'"
   },
   "dependencies": {
-    "@homie/sdk": "workspace:*",
+    "@homie/sdk": "file:../sdk/homie-sdk",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@privy-io/expo": "^0.64.1",

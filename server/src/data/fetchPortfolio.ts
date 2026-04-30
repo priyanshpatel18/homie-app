@@ -1,0 +1,189 @@
+/**
+ * Portfolio fetcher — returns SOL balance, SPL token balances,
+ * Marinade mSOL staking position, and Kamino lending positions.
+ */
+
+const { Connection, PublicKey, LAMPORTS_PER_SOL } = require("@solana/web3.js");
+const { TOKEN_PROGRAM_ID } = require("@solana/spl-token");
+
+const RPC_URLS = {
+  mainnet: process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com",
+  devnet:  "https://api.devnet.solana.com",
+};
+
+// Known token mints we care about
+const KNOWN_TOKENS = {
+  mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So: { symbol: "mSOL", name: "Marinade staked SOL", decimals: 9 },
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { symbol: "USDC", name: "USD Coin", decimals: 6 },
+  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: { symbol: "USDT", name: "Tether USD", decimals: 6 },
+  "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": { symbol: "WETH", name: "Wrapped Ether", decimals: 8 },
+  "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E": { symbol: "BTC",  name: "Wrapped Bitcoin", decimals: 6 },
+  DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263: { symbol: "BONK", name: "Bonk", decimals: 5 },
+  JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN: { symbol: "JUP",  name: "Jupiter", decimals: 6 },
+};
+
+const MSOL_MINT = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";
+
+// Kamino main market on mainnet
+const KAMINO_MARKET_API = "https://api.kamino.finance/v2/kamino-market";
+const KAMINO_OBLIGATIONS_API = "https://api.kamino.finance/v2/obligations";
+
+async function fetchSolBalance(connection, pubkey) {
+  const lamports = await connection.getBalance(pubkey);
+  return lamports / LAMPORTS_PER_SOL;
+}
+
+async function fetchSplBalances(connection, pubkey) {
+  const accounts = await connection.getParsedTokenAccountsByOwner(pubkey, {
+    programId: TOKEN_PROGRAM_ID,
+  });
+
+  const tokens = [];
+
+  for (const { account } of accounts.value) {
+    const parsed = account.data?.parsed?.info;
+    if (!parsed) continue;
+
+    const mint = parsed.mint;
+    const rawAmount = parsed.tokenAmount?.amount;
+    const decimals  = parsed.tokenAmount?.decimals ?? 0;
+    const uiAmount  = parsed.tokenAmount?.uiAmount ?? 0;
+
+    // Skip zero balances
+    if (!rawAmount || rawAmount === "0" || uiAmount === 0) continue;
+
+    const known = KNOWN_TOKENS[mint];
+    tokens.push({
+      mint,
+      symbol:   known?.symbol  ?? "Unknown",
+      name:     known?.name    ?? mint.slice(0, 8) + "...",
+      decimals: known?.decimals ?? decimals,
+      balance:  uiAmount,
+      isKnown:  !!known,
+    });
+  }
+
+  // Sort: known tokens first, then by balance descending
+  tokens.sort((a, b) => {
+    if (a.isKnown !== b.isKnown) return a.isKnown ? -1 : 1;
+    return b.balance - a.balance;
+  });
+
+  return tokens;
+}
+
+async function fetchMarinadePosition(splTokens) {
+  const mSolToken = splTokens.find((t) => t.mint === MSOL_MINT);
+  if (!mSolToken || mSolToken.balance === 0) return null;
+
+  // Fetch current mSOL → SOL exchange rate
+  try {
+    const res = await fetch("https://api.marinade.finance/msol/price_sol", {
+      signal: AbortSignal.timeout(5000),
+    });
+    let solPerMsol = 1.0;
+    if (res.ok) {
+      const data = await res.json() as any;
+      solPerMsol = data?.value ?? data?.price ?? data ?? 1.0;
+    }
+
+    const stakedSol = mSolToken.balance * solPerMsol;
+    return {
+      protocol: "Marinade Finance",
+      type: "liquid_stake",
+      msolBalance: mSolToken.balance,
+      solValue: parseFloat(stakedSol.toFixed(6)),
+      description: `${mSolToken.balance.toFixed(4)} mSOL = ${stakedSol.toFixed(4)} SOL (staked)`,
+    };
+  } catch {
+    return {
+      protocol: "Marinade Finance",
+      type: "liquid_stake",
+      msolBalance: mSolToken.balance,
+      solValue: mSolToken.balance, // 1:1 fallback
+      description: `${mSolToken.balance.toFixed(4)} mSOL staked`,
+    };
+  }
+}
+
+async function fetchKaminoPositions(walletAddress) {
+  try {
+    // Kamino exposes obligations by owner address
+    const res = await fetch(
+      `${KAMINO_OBLIGATIONS_API}?wallet=${walletAddress}&status=open`,
+      {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+
+    if (!res.ok) return [];
+
+    const data = await res.json() as any;
+    const obligations = Array.isArray(data) ? data : data?.obligations ?? data?.data ?? [];
+
+    return obligations.map((ob) => {
+      const deposits = (ob.deposits ?? ob.collateral ?? []).map((d) => ({
+        token:   d.symbol ?? d.token ?? "?",
+        amount:  d.amount ?? d.depositedAmount ?? 0,
+        usdValue: d.usdValue ?? d.marketValue ?? null,
+      }));
+
+      const borrows = (ob.borrows ?? ob.liabilities ?? []).map((b) => ({
+        token:    b.symbol ?? b.token ?? "?",
+        amount:   b.amount ?? b.borrowedAmount ?? 0,
+        usdValue: b.usdValue ?? b.marketValue ?? null,
+      }));
+
+      return {
+        protocol:    "Kamino Lend",
+        type:        "lending",
+        obligationId: ob.obligationId ?? ob.id ?? null,
+        deposits,
+        borrows,
+        netApy:      ob.netApy ?? ob.net_apy ?? null,
+        healthFactor: ob.healthFactor ?? ob.loanToValue ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Main export — returns a full portfolio snapshot.
+ */
+async function fetchPortfolio(walletAddress, network = "mainnet") {
+  const rpc = RPC_URLS[network] ?? RPC_URLS.mainnet;
+  const connection = new Connection(rpc, "confirmed");
+  const pubkey = new PublicKey(walletAddress);
+
+  // Run SOL balance and SPL balances in parallel
+  const [solBalance, splTokens] = await Promise.all([
+    fetchSolBalance(connection, pubkey),
+    fetchSplBalances(connection, pubkey),
+  ]);
+
+  // Marinade position is derived from SPL (no extra RPC needed)
+  // Kamino positions come from their API
+  const [marinadePosition, kaminoPositions] = await Promise.all([
+    fetchMarinadePosition(splTokens),
+    fetchKaminoPositions(walletAddress),
+  ]);
+
+  // Filter mSOL out of the general token list since we surface it as a position
+  const otherTokens = splTokens.filter((t) => t.mint !== MSOL_MINT);
+
+  return {
+    walletAddress,
+    solBalance,
+    tokens: otherTokens,
+    positions: [
+      ...(marinadePosition ? [marinadePosition] : []),
+      ...kaminoPositions,
+    ],
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+export { fetchPortfolio };
