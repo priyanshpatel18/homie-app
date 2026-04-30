@@ -1,0 +1,48 @@
+name: Telegram Commit Notifier
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  notify:
+    if: ${{ github.event.deleted == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+          REPO:    ${{ github.repository }}
+          BRANCH:  ${{ github.ref_name }}
+          ACTOR:   ${{ github.actor }}
+          SHA:     ${{ github.event.head_commit.id }}
+          MSG:     ${{ github.event.head_commit.message }}
+          URL:     ${{ github.event.head_commit.url }}
+        run: |
+          set -euo pipefail
+          ESCAPE='s/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+          FIRST=$(printf '%s' "$MSG" | head -n1 | sed "$ESCAPE")
+          SHORT="${SHA:0:7}"
+
+          TEXT="<b>${BRANCH}</b> · ${ACTOR}
+          <i>${REPO}</i>
+
+          ${FIRST}
+          <a href=\"${URL}\"><code>${SHORT}</code></a>"
+
+          ARGS=(
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"
+            --data-urlencode "text=${TEXT}"
+            --data-urlencode "parse_mode=HTML"
+            --data-urlencode "disable_web_page_preview=true"
+          )
+          if [ -n "${TELEGRAM_THREAD_ID:-}" ]; then
+            ARGS+=(--data-urlencode "message_thread_id=${TELEGRAM_THREAD_ID}")
+          fi
+
+          curl -fsS -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            "${ARGS[@]}"
