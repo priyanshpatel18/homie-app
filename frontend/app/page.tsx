@@ -108,7 +108,7 @@ export default function Home() {
               className="hh-reveal mt-10 flex flex-wrap items-center gap-x-6 gap-y-3"
               style={{ animationDelay: "300ms" }}
             >
-              <FancyButton.Link href="#ask" variant="primary" className="group">
+              <FancyButton.Link href="/chat" variant="primary" className="group">
                 Ask Homie
                 <span
                   aria-hidden
@@ -123,7 +123,7 @@ export default function Home() {
                 rel="noreferrer"
                 className="hh-link text-sm text-white/70 hover:text-white"
               >
-                Join the waitlist on X
+                Follow us on X
               </a>
             </div>
           </div>
@@ -212,6 +212,12 @@ export default function Home() {
               No jargon-first UX. No pretending everything is simple. Homie
               shows the mechanics, the risk, and the why, before you ever sign.
             </p>
+
+            <div className="mt-7">
+              <FancyButton.Link href="/chat" size="sm">
+                Try it
+              </FancyButton.Link>
+            </div>
           </div>
 
           <div className="col-span-12 lg:col-span-7">
