@@ -1,0 +1,17 @@
+{
+  "name": "@homie/sdk",
+  "version": "0.2.0",
+  "description": "Lightweight client SDK for the Homie AI agent backend",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "license": "MIT"
+}

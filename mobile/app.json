@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "HeyHomieAI",
+    "slug": "HeyHomieAI",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "homie",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#010603"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.homie.app",
+      "icon": {
+        "light": "./assets/ios-light.png",
+        "dark": "./assets/ios-dark.png",
+        "tinted": "./assets/ios-tinted.png"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#010603"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.homie.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-web-browser",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#4ADE80"
+        }
+      ],
+      "expo-font",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Homie to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow Homie to use speech recognition for voice commands."
+        }
+      ]
+    ]
+  }
+}
