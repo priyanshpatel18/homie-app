@@ -18,17 +18,25 @@ jobs:
           REPO:    ${{ github.repository }}
           BRANCH:  ${{ github.ref_name }}
           ACTOR:   ${{ github.actor }}
+          SHA:     ${{ github.event.head_commit.id }}
           MSG:     ${{ github.event.head_commit.message }}
           URL:     ${{ github.event.head_commit.url }}
         run: |
           set -euo pipefail
-          FIRST=$(printf '%s' "$MSG" | head -n1)
-          TEXT="[${REPO} / ${BRANCH}] ${ACTOR}: ${FIRST}
-          ${URL}"
+          ESCAPE='s/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+          FIRST=$(printf '%s' "$MSG" | head -n1 | sed "$ESCAPE")
+          SHORT="${SHA:0:7}"
+
+          TEXT="<b>${BRANCH}</b> · ${ACTOR}
+          <i>${REPO}</i>
+
+          ${FIRST}
+          <a href=\"${URL}\"><code>${SHORT}</code></a>"
 
           ARGS=(
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"
             --data-urlencode "text=${TEXT}"
+            --data-urlencode "parse_mode=HTML"
             --data-urlencode "disable_web_page_preview=true"
           )
           if [ -n "${TELEGRAM_THREAD_ID:-}" ]; then
