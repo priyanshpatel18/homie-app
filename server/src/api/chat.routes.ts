@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { getHistory, pushHistory } from "../db/conversationStore";
 import { MAX_HISTORY } from "../config/env";
+import { requireAuth } from "../middleware/auth";
+import { requireWalletOwnership } from "../middleware/walletOwnership";
 import type { ChatRequestBody, WalletContext, ChatHistoryEntry } from "../types/chat";
 
 const { agentChat, agentChatStream } = require("../ai/agent") as {
@@ -40,7 +42,7 @@ function buildWalletContext(body: ChatRequestBody): WalletContext {
   };
 }
 
-chatRouter.post("/", async (req: Request, res: Response) => {
+chatRouter.post("/", requireAuth, requireWalletOwnership, async (req: Request, res: Response) => {
   try {
     const body = (req.body ?? {}) as ChatRequestBody;
     const { message, walletAddress, conversationHistory: clientHistory } = body;
@@ -88,7 +90,7 @@ chatRouter.post("/", async (req: Request, res: Response) => {
   }
 });
 
-chatRouter.post("/stream", async (req: Request, res: Response) => {
+chatRouter.post("/stream", requireAuth, requireWalletOwnership, async (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");

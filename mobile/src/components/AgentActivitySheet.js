@@ -3,7 +3,7 @@ import {
   View, Text, Modal, Pressable, FlatList,
   StyleSheet, ActivityIndicator, TouchableOpacity,
 } from "react-native";
-import { API_URL } from "../services/api";
+import { fetchActivityLog } from "@homie/sdk";
 
 const GLASS      = "rgba(255,255,255,0.06)";
 const GLASS_BDR  = "rgba(255,255,255,0.10)";
@@ -82,9 +82,8 @@ export default function AgentActivitySheet({ visible, walletAddress, onClose }) 
   React.useEffect(() => {
     if (!visible || !walletAddress) return;
     setLoading(true);
-    fetch(`${API_URL}/api/monitor/activity/${walletAddress}?limit=50`)
-      .then((r) => r.json())
-      .then((d) => setEntries(d.entries ?? []))
+    fetchActivityLog(walletAddress, 50)
+      .then((entries) => setEntries(entries ?? []))
       .catch(() => setEntries([]))
       .finally(() => setLoading(false));
   }, [visible, walletAddress]);

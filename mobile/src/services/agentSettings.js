@@ -1,4 +1,7 @@
-import { API_URL } from "./api";
+import {
+  fetchAgentSettings as sdkFetchAgentSettings,
+  saveAgentSettings as sdkSaveAgentSettings,
+} from "@homie/sdk";
 
 export const SPENDING_CAP_OPTS = [
   { value: 100,   label: "$100 per tx",     desc: "Conservative auto-execute limit" },
@@ -59,13 +62,11 @@ const DEFAULTS = {
 
 export async function loadAgentSettings(walletAddress) {
   try {
-    const res = await fetch(`${API_URL}/api/monitor/settings/${walletAddress}`);
-    if (!res.ok) return { ...DEFAULTS };
-    const data = await res.json();
+    const settings = await sdkFetchAgentSettings(walletAddress);
     return {
       ...DEFAULTS,
-      ...(data.settings || {}),
-      autoExecute: { ...DEFAULTS.autoExecute, ...(data.settings?.autoExecute || {}) },
+      ...(settings || {}),
+      autoExecute: { ...DEFAULTS.autoExecute, ...(settings?.autoExecute || {}) },
     };
   } catch {
     return { ...DEFAULTS };
@@ -74,14 +75,7 @@ export async function loadAgentSettings(walletAddress) {
 
 export async function saveAgentSettings(walletAddress, settings) {
   try {
-    const res = await fetch(`${API_URL}/api/monitor/settings/${walletAddress}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(settings),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.settings;
+    return await sdkSaveAgentSettings(walletAddress, settings);
   } catch {
     return null;
   }

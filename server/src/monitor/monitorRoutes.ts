@@ -26,8 +26,12 @@ const { registerPosition, closePosition, getPositions } = require("./positionSto
 const { setAutopilot, getAutopilot }                    = require("./autopilotStore");
 const { logActivity, updateActivity, getActivityLog }   = require("./activityLog");
 const { getSettings, saveSettings }                     = require("./agentSettings");
+const { requireAuth }                                   = require("../middleware/auth");
+const { requireWalletOwnership }                        = require("../middleware/walletOwnership");
 
 const router = express.Router();
+
+router.use(requireAuth, requireWalletOwnership);
 
 // ─── Positions ────────────────────────────────────────────────────────────────
 

@@ -28,6 +28,7 @@ import {
   registerPushToken,
   addNotificationListeners,
 } from "./src/services/notifications";
+import { setAuthToken } from "./src/services/authStore";
 
 const PRIVY_APP_ID = "cmnip9eo301x40cjofkev6bq1";
 
@@ -79,6 +80,22 @@ function RootNavigator() {
   const solanaWalletState = useEmbeddedSolanaWallet();
   const walletAddress = ready ? (solanaWalletState?.wallets?.[0]?.address ?? null) : null;
   const pushRegistered = useRef(false);
+
+  // Keep the auth token fresh — refresh on login and on app foreground resume
+  useEffect(() => {
+    if (!authenticated || !privyState.getAccessToken) return;
+    privyState.getAccessToken().then(setAuthToken).catch(() => {});
+  }, [authenticated]);
+
+  useEffect(() => {
+    if (!authenticated || !privyState.getAccessToken) return;
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") {
+        privyState.getAccessToken().then(setAuthToken).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [authenticated]);
 
   const [importedAddress, setImportedAddress] = useState(null);
   const [importChecked, setImportChecked]     = useState(false);

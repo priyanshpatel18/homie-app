@@ -14,6 +14,8 @@ export const env = {
   LLM_BASE_URL: process.env.LLM_BASE_URL ?? "https://api.groq.com/openai/v1",
   LLM_API_KEY: process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "",
   LLM_MODEL: process.env.LLM_MODEL ?? "llama-3.3-70b-versatile",
+  PRIVY_APP_ID: process.env.PRIVY_APP_ID ?? "",
+  PRIVY_APP_SECRET: process.env.PRIVY_APP_SECRET ?? "",
 } as const;
 
 export const MAX_HISTORY = 20;

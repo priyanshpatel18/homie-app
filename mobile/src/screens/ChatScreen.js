@@ -1356,7 +1356,7 @@ export default function ChatScreen({ route, navigation }) {
       const pollStart = Date.now();
       const poll = setInterval(async () => {
         try {
-          if (Date.now() - pollStart > 30_000) {
+          if (Date.now() - pollStart > 60_000) {
             clearInterval(poll);
             setMessages((prev) =>
               prev.map((m) =>
@@ -1423,7 +1423,17 @@ export default function ChatScreen({ route, navigation }) {
               })
               .catch(() => {});
           }
-        } catch {}
+        } catch (err) {
+          console.error("[Poll] Confirmation polling error:", err.message);
+          clearInterval(poll);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === sentMsgId
+                ? { ...m, text: `Couldn't check confirmation status. [Check on Solscan →](https://solscan.io/tx/${signature})` }
+                : m
+            )
+          );
+        }
       }, 2000);
     } catch (err) {
       setPendingTx(null);
