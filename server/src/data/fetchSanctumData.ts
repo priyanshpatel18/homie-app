@@ -1,145 +1,117 @@
 /**
- * Fetch live Sanctum data:
- * - INF APY (Infinity Pool yield)
- * - Sanctum LST list with APYs
- * - Sanctum pool TVL
- *
- * Falls back to static values if APIs are unavailable.
+ * Fetch live Sanctum data.
+ * INF APY is derived from the INF/SOL exchange rate tracked over time
+ * (Jupiter price API). Falls back to DeFiLlama when history is insufficient.
  */
 
-const SANCTUM_API_BASE = process.env.SANCTUM_API_URL
-  || "https://sanctum-s-api.fly.dev/v1";
+const INF_MINT = "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm";
+const SOL_MINT = "So11111111111111111111111111111111111111112";
 
-const SANCTUM_API_KEY = process.env.SANCTUM_API_KEY || "";
+// Ring buffer of rate snapshots — survives across 5-min cache cycles
+const rateHistory: { rate: number; ts: number }[] = [];
+const MAX_HISTORY = 10_000; // keep up to ~35 days at 5-min intervals
 
-const FALLBACKS = {
-  inf_apy: 7.5,
-  inf_tvl_usd: 500_000_000,
-};
-
-// Cache for 5 minutes
-let cache = null;
-let cacheTime = 0;
+let _cache: any = null;
+let _cacheTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function sanctumHeaders() {
-  const h = {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-  };
-  if (SANCTUM_API_KEY) h["Authorization"] = `Bearer ${SANCTUM_API_KEY}`;
-  return h;
+async function fetchInfSolRate(): Promise<number> {
+  const res = await fetch(
+    `https://price.jup.ag/v6/price?ids=${INF_MINT}&vsToken=${SOL_MINT}`,
+    { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }
+  );
+  if (!res.ok) throw new Error(`Jupiter price API ${res.status}`);
+  const data = await res.json() as any;
+  const rate = data?.data?.[INF_MINT]?.price;
+  if (!rate) throw new Error("No INF/SOL rate in response");
+  return parseFloat(rate);
 }
 
-/**
- * Fetch INF APY from Sanctum API.
- */
-async function fetchInfApy() {
-  try {
-    // Try Sanctum's LST APY endpoint for INF
-    const INF_MINT = "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm";
-    const res = await fetch(`${SANCTUM_API_BASE}/lsts/${INF_MINT}/apys`, {
-      headers: sanctumHeaders(),
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) throw new Error(`Sanctum APY API ${res.status}`);
-
-    const data = await res.json() as any;
-
-    // APY can be nested in various shapes
-    const apy = data.apy ?? data.estimated_apy ?? data.total_apy
-      ?? data?.apys?.total ?? data?.apys?.staking ?? null;
-
-    if (apy === null) throw new Error("No APY in response");
-
-    return apy < 1 ? parseFloat((apy * 100).toFixed(2)) : parseFloat(apy.toFixed(2));
-  } catch (err: any) {
-    console.warn("[Sanctum INF APY] API failed:", err.message);
-
-    // Fallback: try DeFiLlama
-    try {
-      const llamaRes = await fetch(
-        "https://yields.llama.fi/pools",
-        { signal: AbortSignal.timeout(8000) }
-      );
-      if (llamaRes.ok) {
-        const llamaData = await llamaRes.json() as any;
-        const pools = llamaData.data ?? [];
-        const infPool = pools.find(
-          (p) => p.symbol?.toUpperCase()?.includes("INF") && p.project?.toLowerCase()?.includes("sanctum")
-        );
-        if (infPool?.apy) {
-          return parseFloat(infPool.apy.toFixed(2));
-        }
-      }
-    } catch { /* ignore */ }
-
-    return FALLBACKS.inf_apy;
-  }
+function apyFromHistory(): number | null {
+  if (rateHistory.length < 2) return null;
+  const newest = rateHistory[rateHistory.length - 1];
+  // Prefer a reference point ~7 days ago; fall back to oldest available
+  const targetTs = newest.ts - 7 * 24 * 60 * 60 * 1000;
+  const ref = rateHistory.find(r => r.ts <= targetTs) ?? rateHistory[0];
+  const daysDiff = (newest.ts - ref.ts) / 86_400_000;
+  if (daysDiff < 0.5) return null; // need at least 12 h of data
+  const apy = ((newest.rate / ref.rate) ** (365 / daysDiff) - 1) * 100;
+  return parseFloat(apy.toFixed(2));
 }
 
-/**
- * Fetch Sanctum LST catalog with metadata.
- * Returns top LSTs by TVL with their APYs.
- */
+async function infApyFromDefiLlama(): Promise<number | null> {
+  const res = await fetch("https://yields.llama.fi/pools", {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`DeFiLlama pools ${res.status}`);
+  const data = await res.json() as any;
+  const pool = (data?.data ?? []).find(
+    (p: any) => p.chain === "Solana" &&
+      (p.project?.toLowerCase().includes("sanctum") || p.symbol?.toUpperCase().includes("INF"))
+  );
+  if (!pool?.apy) return null;
+  return parseFloat(pool.apy.toFixed(2));
+}
+
 async function fetchSanctumLsts() {
-  try {
-    const res = await fetch(`${SANCTUM_API_BASE}/lsts`, {
-      headers: sanctumHeaders(),
-      signal: AbortSignal.timeout(10000),
-    });
+  const SANCTUM_API_KEY = process.env.SANCTUM_API_KEY ?? "";
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (SANCTUM_API_KEY) headers.Authorization = `Bearer ${SANCTUM_API_KEY}`;
 
-    if (!res.ok) throw new Error(`Sanctum LST list ${res.status}`);
-
-    const data = await res.json() as any;
-    const lsts = Array.isArray(data) ? data : data.lsts ?? data.data ?? [];
-
-    return lsts.map((lst) => ({
-      symbol: lst.symbol ?? lst.ticker ?? "?",
-      name: lst.name ?? "",
-      mint: lst.mint ?? lst.address ?? "",
-      apy: lst.apy ?? lst.estimated_apy ?? null,
-      tvl: lst.tvl ?? null,
-    }));
-  } catch (err: any) {
-    console.warn("[Sanctum LSTs] fetch failed:", err.message);
-    // Return well-known LSTs as fallback
-    return [
-      { symbol: "INF", name: "Sanctum Infinity", mint: "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm", apy: FALLBACKS.inf_apy },
-      { symbol: "jitoSOL", name: "Jito Staked SOL", mint: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", apy: 7.8 },
-      { symbol: "mSOL", name: "Marinade Staked SOL", mint: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", apy: 7.2 },
-      { symbol: "bSOL", name: "BlazeStake SOL", mint: "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1", apy: 7.0 },
-    ];
-  }
+  const res = await fetch("https://sanctum-s-api.fly.dev/v1/lsts", {
+    headers,
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Sanctum LST list ${res.status}`);
+  const data = await res.json() as any;
+  const lsts = Array.isArray(data) ? data : data.lsts ?? data.data ?? [];
+  return lsts.map((lst: any) => ({
+    symbol: lst.symbol ?? lst.ticker ?? "?",
+    name: lst.name ?? "",
+    mint: lst.mint ?? lst.address ?? "",
+    apy: lst.apy != null ? (lst.apy < 1 ? parseFloat((lst.apy * 100).toFixed(2)) : parseFloat(lst.apy.toFixed(2))) : null,
+    tvl: lst.tvl ?? null,
+  }));
 }
 
-/**
- * Fetch all Sanctum data with caching.
- */
 async function fetchSanctumData() {
-  if (cache && Date.now() - cacheTime < CACHE_TTL_MS) {
-    return cache;
+  if (_cache && Date.now() - _cacheTime < CACHE_TTL_MS) return _cache;
+
+  // Always try to record a fresh rate snapshot
+  try {
+    const rate = await fetchInfSolRate();
+    rateHistory.push({ rate, ts: Date.now() });
+    if (rateHistory.length > MAX_HISTORY) rateHistory.shift();
+  } catch (err: any) {
+    console.error("[Sanctum] rate fetch failed:", err.message);
   }
 
-  const [infApyResult, lstsResult] = await Promise.allSettled([
-    fetchInfApy(),
-    fetchSanctumLsts(),
-  ]);
+  // Compute APY from history; if insufficient, try DeFiLlama
+  let infApy = apyFromHistory();
+  if (infApy === null) {
+    try {
+      infApy = await infApyFromDefiLlama();
+      console.log(`[Sanctum] using DeFiLlama APY: ${infApy}%`);
+    } catch (err: any) {
+      console.error("[Sanctum] DeFiLlama APY failed:", err.message);
+    }
+  }
 
-  const infApy = infApyResult.status === "fulfilled" ? infApyResult.value : FALLBACKS.inf_apy;
-  const lsts = lstsResult.status === "fulfilled" ? lstsResult.value : [];
+  const lstsResult = await Promise.allSettled([fetchSanctumLsts()]);
+  const lsts = lstsResult[0].status === "fulfilled" ? lstsResult[0].value : [];
+  if (lstsResult[0].status === "rejected") {
+    console.error("[Sanctum] LST list failed:", (lstsResult[0].reason as Error).message);
+  }
 
-  cache = {
+  _cache = {
     inf_apy: infApy,
     lsts_count: lsts.length,
     top_lsts: lsts.slice(0, 20),
     fetched_at: new Date().toISOString(),
   };
-  cacheTime = Date.now();
-
-  console.log("[Sanctum Data] fetched:", { inf_apy: infApy, lsts_count: lsts.length });
-  return cache;
+  _cacheTime = Date.now();
+  return _cache;
 }
 
-export { fetchSanctumData, fetchInfApy, fetchSanctumLsts };
+export { fetchSanctumData, fetchInfSolRate, fetchSanctumLsts };

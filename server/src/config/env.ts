@@ -6,8 +6,9 @@ const num = (v: string | undefined, fallback: number): number => {
 };
 
 export const env = {
-  PORT: num(process.env.PORT, 3000),
+  PORT: num(process.env.PORT, 4000),
   HOST: process.env.HOST ?? "0.0.0.0",
+  SOLANA_RPC_URL: process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com",
   JUP_API_KEY: process.env.JUP_API_KEY ?? "",
   BIRDEYE_API_KEY: process.env.BIRDEYE_API_KEY ?? "",
   SANCTUM_API_KEY: process.env.SANCTUM_API_KEY ?? "",
