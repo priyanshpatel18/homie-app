@@ -15,18 +15,10 @@ const MINTS = {
   USDY: "A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6",
 };
 
-const FALLBACK = {
-  price: 1.05,
-  apy: 5.0,
-};
-
-let _cache = null;
+let _cache: any = null;
 let _cacheTime = 0;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour (USDY price updates daily)
+const CACHE_TTL = 60 * 60 * 1000;
 
-/**
- * Fetch USDY price from CoinGecko to derive yield.
- */
 async function fetchUsdyPrice() {
   const res = await fetch(COINGECKO_USDY, {
     headers: { Accept: "application/json" },
@@ -62,32 +54,23 @@ async function fetchUsdyFromDefiLlama() {
 async function fetchOndoData() {
   if (_cache && Date.now() - _cacheTime < CACHE_TTL) return _cache;
 
-  let price = FALLBACK.price;
-  let apy = FALLBACK.apy;
-  let tvl = null;
+  let price: number | null = null;
+  let apy: number | null = null;
+  let tvl: number | null = null;
 
-  // Try CoinGecko for price
   try {
     const cgPrice = await fetchUsdyPrice();
-    if (cgPrice) {
-      price = parseFloat(cgPrice.toFixed(4));
-      // USDY started at $1.00 — price appreciation ≈ annualized yield
-      // Rough: (price - 1) * 100 gives cumulative yield since inception
-      // For current rate, DefiLlama is better
-    }
+    if (cgPrice) price = parseFloat(cgPrice.toFixed(4));
   } catch (err: any) {
-    console.warn("[Ondo] CoinGecko fetch failed:", err.message);
+    console.error("[Ondo] CoinGecko fetch failed:", err.message);
   }
 
-  // Try DefiLlama for APY
   try {
     const llama = await fetchUsdyFromDefiLlama();
-    if (llama?.apy !== null && llama?.apy !== undefined) {
-      apy = parseFloat(llama.apy.toFixed(2));
-    }
+    if (llama?.apy != null) apy = parseFloat(llama.apy.toFixed(2));
     if (llama?.tvl) tvl = llama.tvl;
   } catch (err: any) {
-    console.warn("[Ondo] DefiLlama fetch failed:", err.message);
+    console.error("[Ondo] DefiLlama fetch failed:", err.message);
   }
 
   _cache = {

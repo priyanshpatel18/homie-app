@@ -76,34 +76,22 @@ async function fetchMarinadePosition(splTokens) {
   const mSolToken = splTokens.find((t) => t.mint === MSOL_MINT);
   if (!mSolToken || mSolToken.balance === 0) return null;
 
-  // Fetch current mSOL → SOL exchange rate
-  try {
-    const res = await fetch("https://api.marinade.finance/msol/price_sol", {
-      signal: AbortSignal.timeout(5000),
-    });
-    let solPerMsol = 1.0;
-    if (res.ok) {
-      const data = await res.json() as any;
-      solPerMsol = data?.value ?? data?.price ?? data ?? 1.0;
-    }
+  const res = await fetch("https://api.marinade.finance/msol/price_sol", {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`Marinade price API ${res.status}`);
+  const data = await res.json() as any;
+  const solPerMsol = data?.value ?? data?.price ?? null;
+  if (!solPerMsol) throw new Error("Marinade: no exchange rate in response");
 
-    const stakedSol = mSolToken.balance * solPerMsol;
-    return {
-      protocol: "Marinade Finance",
-      type: "liquid_stake",
-      msolBalance: mSolToken.balance,
-      solValue: parseFloat(stakedSol.toFixed(6)),
-      description: `${mSolToken.balance.toFixed(4)} mSOL = ${stakedSol.toFixed(4)} SOL (staked)`,
-    };
-  } catch {
-    return {
-      protocol: "Marinade Finance",
-      type: "liquid_stake",
-      msolBalance: mSolToken.balance,
-      solValue: mSolToken.balance, // 1:1 fallback
-      description: `${mSolToken.balance.toFixed(4)} mSOL staked`,
-    };
-  }
+  const stakedSol = mSolToken.balance * solPerMsol;
+  return {
+    protocol: "Marinade Finance",
+    type: "liquid_stake",
+    msolBalance: mSolToken.balance,
+    solValue: parseFloat(stakedSol.toFixed(6)),
+    description: `${mSolToken.balance.toFixed(4)} mSOL = ${stakedSol.toFixed(4)} SOL (staked)`,
+  };
 }
 
 async function fetchKaminoPositions(walletAddress) {
@@ -164,12 +152,14 @@ async function fetchPortfolio(walletAddress, network = "mainnet") {
     fetchSplBalances(connection, pubkey),
   ]);
 
-  // Marinade position is derived from SPL (no extra RPC needed)
-  // Kamino positions come from their API
-  const [marinadePosition, kaminoPositions] = await Promise.all([
-    fetchMarinadePosition(splTokens),
+  const [marinadeResult, kaminoPositions] = await Promise.all([
+    fetchMarinadePosition(splTokens).catch((err) => {
+      console.error("[Portfolio] Marinade position fetch failed:", err.message);
+      return null;
+    }),
     fetchKaminoPositions(walletAddress),
   ]);
+  const marinadePosition = marinadeResult;
 
   // Filter mSOL out of the general token list since we surface it as a position
   const otherTokens = splTokens.filter((t) => t.mint !== MSOL_MINT);

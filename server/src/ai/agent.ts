@@ -1,4 +1,4 @@
-// @ts-nocheck
+﻿// @ts-nocheck
 /**
  * Agentic loop with tool calling + conversation memory.
  * The LLM decides which tools to invoke, sees results, and decides next action.
@@ -68,6 +68,8 @@ const { fetchKaminoObligations } = require("../data/fetchKaminoHealth");
 const { buildOrcaRebalanceBundleTx, buildMeteoraRebalanceBundleTx } = require("../engine/lpRebalanceBundle");
 const { logActivity }   = require("../monitor/activityLog");
 const { getSettings, canAutoExecute } = require("../monitor/agentSettings");
+const { projectYield }  = require("../data/projectPortfolio");
+const { evaluateRisk }  = require("../data/riskGate");
 
 // â"€â"€â"€ Profile context helper â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -185,6 +187,18 @@ function preflightBalance(toolName, args, walletContext) {
   }
 
   return { ok: true };
+}
+
+// Cached SOL price — updated whenever get_yield_rates runs, used by attachRisk
+let _cachedSolPrice = 150;
+
+// Attach a riskEvaluation field to any transaction tool result
+function attachRisk(result, protocol, action, amountUsd) {
+  if (!result || result.error || result.__preflight_failed) return result;
+  try {
+    result.riskEvaluation = evaluateRisk(protocol, action, amountUsd ?? 0);
+  } catch {}
+  return result;
 }
 
 // â"€â"€â"€ Liquidation price helper â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -1375,6 +1389,26 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "project_portfolio",
+      description:
+        "Project the future value of a DeFi strategy over 30, 60, or 90 days across three SOL price scenarios: bull (+30%), base (flat), bear (-30%). Use when: user asks 'what would I earn if I staked X SOL for 30 days', 'show me projections', 'what's the best/worst case', 'how much would I make in 3 months', or when presenting a strategy in Learn mode. Always use live APY from get_yield_rates or the relevant data tool first. Returns per-scenario: end value, yield earned in USD and native token, daily earnings, and upside vs just holding SOL.",
+      parameters: {
+        type: "object",
+        properties: {
+          amountSol:  { type: "number", description: "Amount in SOL (for SOL-denominated strategies like staking)" },
+          amountUsd:  { type: "number", description: "Amount in USD (for stablecoin strategies like lending USDC)" },
+          apy:        { type: "number", description: "Annual percentage yield as a number, e.g. 7.8 for 7.8%" },
+          protocol:   { type: "string", description: "Protocol name, e.g. 'Marinade Finance', 'Kamino', 'Jupiter Lend'" },
+          action:     { type: "string", description: "Action type: 'stake', 'lend', 'lp'" },
+          days:       { type: "number", enum: [30, 60, 90], description: "Projection period in days" },
+        },
+        required: ["apy", "protocol", "action", "days"],
+      },
+    },
+  },
 ];
 
 // --- Transaction tools - hard enforcement at the executor level --------------
@@ -1585,7 +1619,9 @@ async function executeTool(toolCall, walletContext) {
     }
 
     case "get_yield_rates": {
-      return await fetchLiveRates();
+      const rates = await fetchLiveRates();
+      if (rates?.sol_price_usd) _cachedSolPrice = rates.sol_price_usd;
+      return rates;
     }
 
     case "get_market_data": {
@@ -1597,7 +1633,7 @@ async function executeTool(toolCall, walletContext) {
       if (pre.__preflight_failed) return pre;
       const result = await buildMarinadeStakeTx(args.amount_sol, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
-      return result;
+      return attachRisk(result, "Marinade Finance", "stake", Number(args.amount_sol) * _cachedSolPrice);
     }
 
     case "prepare_swap_transaction": {
@@ -1611,7 +1647,10 @@ async function executeTool(toolCall, walletContext) {
         network
       );
       if (result && !result.error) result.requiresApproval = true;
-      return result;
+      const swapAmountUsd = (args.input_token || "").toUpperCase() === "SOL"
+        ? Number(args.amount) * _cachedSolPrice
+        : Number(args.amount); // token amount — rough USD proxy
+      return attachRisk(result, "Jupiter", "swap", swapAmountUsd);
     }
 
     case "prepare_lend_transaction": {
@@ -1619,19 +1658,25 @@ async function executeTool(toolCall, walletContext) {
       if (pre.__preflight_failed) return pre;
       const result = await buildKaminoLendTx(args.token, args.amount, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
-      return result;
+      const lendAmountUsd = (args.token || "").toUpperCase() === "SOL"
+        ? Number(args.amount) * _cachedSolPrice
+        : Number(args.amount);
+      return attachRisk(result, "Kamino Lend", "lend", lendAmountUsd);
     }
 
     case "prepare_unstake_transaction": {
       const result = await buildMarinadeUnstakeTx(args.amount_msol, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
-      return result;
+      return attachRisk(result, "Marinade Finance", "unstake", Number(args.amount_msol) * _cachedSolPrice);
     }
 
     case "prepare_withdraw_transaction": {
       const result = await buildKaminoWithdrawTx(args.token, args.amount, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
-      return result;
+      const withdrawAmountUsd = (args.token || "").toUpperCase() === "SOL"
+        ? Number(args.amount) * _cachedSolPrice
+        : Number(args.amount);
+      return attachRisk(result, "Kamino Lend", "withdraw", withdrawAmountUsd);
     }
 
     case "get_pool_risks": {
@@ -1738,7 +1783,10 @@ async function executeTool(toolCall, walletContext) {
         walletAddress: walletContext.walletAddress,
         network: walletContext.network || "mainnet",
       });
-      return {
+      const orcaAmountUsd = (args.tokenA || "").toUpperCase() === "SOL"
+        ? Number(args.amountA) * _cachedSolPrice
+        : Number(args.amountA);
+      return attachRisk({
         type: "transaction_preview",
         protocol: "Orca Whirlpools",
         action: `Open ${args.tokenA}-${args.tokenB} LP position (full range)`,
@@ -1747,7 +1795,7 @@ async function executeTool(toolCall, walletContext) {
         fee: result.fee,
         requiresApproval: true,
         note: result.note,
-      };
+      }, "Orca Whirlpools", "lp", orcaAmountUsd);
     }
 
     case "harvest_orca_position": {
@@ -1804,7 +1852,11 @@ async function executeTool(toolCall, walletContext) {
         walletAddress:  walletContext.walletAddress,
         network:        walletContext.network || "mainnet",
       });
-      return result;
+      const cycles = args.cycles ? Number(args.cycles) : 1;
+      const dcaTotalUsd = (args.inputToken || "").toUpperCase() === "SOL"
+        ? Number(args.amountPerCycle) * cycles * _cachedSolPrice
+        : Number(args.amountPerCycle) * cycles;
+      return attachRisk(result, "Jupiter", "dca", dcaTotalUsd);
     }
 
     case "get_dca_orders": {
@@ -1827,7 +1879,10 @@ async function executeTool(toolCall, walletContext) {
         walletAddress: walletContext.walletAddress,
         network:      walletContext.network || "mainnet",
       });
-      return result;
+      const limitAmountUsd = (args.inputToken || "").toUpperCase() === "SOL"
+        ? Number(args.inputAmount) * _cachedSolPrice
+        : Number(args.inputAmount);
+      return attachRisk(result, "Jupiter", "limit_order", limitAmountUsd);
     }
 
     case "create_oco_order": {
@@ -1840,7 +1895,10 @@ async function executeTool(toolCall, walletContext) {
         walletAddress:   walletContext.walletAddress,
         network:         walletContext.network || "mainnet",
       });
-      return result;
+      const ocoAmountUsd = (args.holdingToken || "").toUpperCase() === "SOL"
+        ? Number(args.holdingAmount) * _cachedSolPrice
+        : Number(args.holdingAmount);
+      return attachRisk(result, "Jupiter", "limit_order", ocoAmountUsd);
     }
 
     case "get_limit_orders": {
@@ -1880,7 +1938,10 @@ async function executeTool(toolCall, walletContext) {
         }
         result.requiresApproval = true;
       }
-      return result;
+      const levAmountUsd = (args.collToken || "").toUpperCase() === "SOL" || (args.collToken || "").toLowerCase().includes("sol")
+        ? Number(args.depositAmount) * _cachedSolPrice
+        : Number(args.depositAmount);
+      return attachRisk(result, "Kamino Finance", "leverage", levAmountUsd);
     }
 
     case "close_kamino_leverage": {
@@ -2444,9 +2505,97 @@ async function executeTool(toolCall, walletContext) {
       return result;
     }
 
+    case "project_portfolio": {
+      return await projectYield({
+        amountSol: args.amountSol != null ? Number(args.amountSol) : undefined,
+        amountUsd: args.amountUsd != null ? Number(args.amountUsd) : undefined,
+        apy:       Number(args.apy),
+        protocol:  String(args.protocol),
+        action:    String(args.action),
+        days:      Number(args.days) as 30 | 60 | 90,
+      });
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }
+}
+
+// â"€â"€â"€ Live context builders â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+
+function buildLiveRatesCtx(rates: any): string {
+  if (!rates) return "";
+  const lines: string[] = [];
+
+  const staking = [
+    rates.jitosol_apy   != null && `jitoSOL: ${rates.jitosol_apy}%`,
+    rates.marinade_apy  != null && `mSOL: ${rates.marinade_apy}%`,
+    rates.sanctum_inf_apy != null && `INF: ${rates.sanctum_inf_apy}%`,
+  ].filter(Boolean);
+  if (staking.length) lines.push(`Staking APYs — ${staking.join(", ")}`);
+
+  const solLend = [
+    rates.jup_lend_sol_apy       != null && `Jupiter Lend: ${rates.jup_lend_sol_apy}%`,
+    rates.kamino_sol_lending_apy != null && `Kamino: ${rates.kamino_sol_lending_apy}%`,
+    rates.marginfi_sol_supply_apy != null && `marginfi: ${rates.marginfi_sol_supply_apy}%`,
+  ].filter(Boolean);
+  if (solLend.length) lines.push(`SOL Lending APYs — ${solLend.join(", ")}`);
+
+  const stable = [
+    rates.susde_apy              != null && `sUSDe: ${rates.susde_apy}%`,
+    rates.usdy_apy               != null && `USDY: ${rates.usdy_apy}%`,
+    rates.jup_lend_usdc_apy      != null && `Jupiter Lend USDC: ${rates.jup_lend_usdc_apy}%`,
+    rates.kamino_usdc_lending_apy != null && `Kamino USDC: ${rates.kamino_usdc_lending_apy}%`,
+  ].filter(Boolean);
+  if (stable.length) lines.push(`Stablecoin APYs — ${stable.join(", ")}`);
+
+  if (rates.sol_price_usd != null) lines.push(`SOL price: $${rates.sol_price_usd}`);
+
+  if (!lines.length) return "";
+  return `\n\nLIVE RATES (fetched right now — always use these numbers, never invent APYs):\n${lines.join("\n")}`;
+}
+
+function buildIdleCtx(solBalance: number | null | undefined, rates: any): string {
+  const sol = Number(solBalance ?? 0);
+  if (sol < 1 || !rates) return "";
+
+  const candidates: number[] = [
+    rates.jitosol_apy,
+    rates.marinade_apy,
+    rates.sanctum_inf_apy,
+  ].filter((v): v is number => v != null);
+  if (!candidates.length) return "";
+
+  const bestApy = Math.max(...candidates);
+  const dailySol = (sol * bestApy) / 100 / 365;
+  const solPrice = typeof rates.sol_price_usd === "number" ? rates.sol_price_usd : 0;
+  const dailyUsd = solPrice > 0 ? ` (~$${(dailySol * solPrice).toFixed(2)}/day)` : "";
+
+  return `\n\nIDLE SOL ALERT: User has ${sol.toFixed(2)} SOL sitting unstaked in their wallet. At the current best staking APY (${bestApy}%), they are missing ${dailySol.toFixed(4)} SOL${dailyUsd} every day. Proactively mention this when it's relevant to the conversation.`;
+}
+
+function buildModeCtx(tradeMode: string | undefined): string {
+  if (tradeMode === "learn") {
+    return `\n\nMODE: LEARN — This user wants maximum context. Rules:
+- BEFORE every execution: 1 sentence using their exact numbers (e.g. "You're about to stake 2.4 SOL with Marinade — you'll get ~2.4 mSOL earning ${"{"}LIVE_APY{"}"}% APY, worth ~$X/year"). Use live rates from context, not invented numbers.
+- Explain jargon terms inline in brackets: [mSOL: the liquid token you get for staking SOL with Marinade].
+- AFTER execution (when message starts with __post_tx__): narrate what changed + what they now earn per month.
+- Call project_portfolio when presenting a strategy — always show the 90-day projection.
+- Keep each explanation to 1-2 sentences — brief and grounded, not a lecture.`;
+  }
+  if (tradeMode === "auto") {
+    return `\n\nMODE: AUTO — This user is experienced. Rules:
+- Execute concisely. One-line reports only.
+- Proactively flag drift, better rates, and risks without waiting to be asked.
+- Skip all explanations of basics — they know DeFi.
+- After execution: one line confirming what happened and the key number (APY, output amount).`;
+  }
+  // "ask" is default
+  return `\n\nMODE: ASK — User leads, Homie assists. Rules:
+- Execute efficiently when asked.
+- Add ONE sharp insight where it genuinely helps: a better rate available, a hidden risk, a smarter option.
+- Skip explanations of things they clearly already understand.
+- Show alternatives with choices[] when the decision meaningfully affects outcome.`;
 }
 
 // â"€â"€â"€ System prompt â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -2545,6 +2694,7 @@ TOOLS â€" use them proactively:
 63. Rebalance out-of-range LP position (rebalance_lp) — USE THIS when user says 'my position is out of range', 'rebalance my LP', 'fix my Orca position', 'recenter my LP'. Builds a 3-step bundle: close → rebalance tokens → reopen at current price. Always explain each step in the bundle and the WHY (e.g. "your position drifted out of range so you're earning 0 fees"). Show the new range. Requires positionMint for Orca or poolAddress+positionAddress for Meteora.
 64. Get Kamino lending health (get_lending_health) — USE THIS when user asks 'what's my health factor', 'am I at risk of liquidation', 'how much can SOL drop before liquidation', 'check my borrow position', 'show my Kamino health'. Returns collateral, debt, health factor (>1.8 safe, 1.3-1.8 medium, 1.05-1.3 high risk, <1.05 critical), and estimated SOL liquidation price.
 64. Calculate impermanent loss on an LP position (calculate_il) — USE THIS when user asks 'what's my IL', 'how much impermanent loss', 'is my LP profitable', 'compare fees to IL'. Requires entry and current price of the token.
+65. Project future portfolio value (project_portfolio) — USE THIS when user asks 'what would I earn if I staked X SOL for 30 days', 'show me projections', 'best/worst case', 'how much will I make in 3 months', or in Learn mode when presenting a new strategy. Always fetch live APY first. Returns bull/base/bear scenarios over 30/60/90 days with USD yield, daily earnings, and upside vs holding. Set the "projection" response field to the result.
 
 YIELD-BEARING STABLECOIN RULES:
 - sUSDe (Ethena): delta-neutral, 10-20%+ APY (variable, funding-rate dependent), medium risk. Recommend when: idle USDC > $500, user is yield-seeking, market stable. NEVER allocate >40% portfolio (concentration risk). NOT for conservative/Safe-risk users.
@@ -2610,6 +2760,15 @@ STEP 2 -- ONLY after the user says yes/go/confirm/do it: call prepare_*_transact
 If they say no/cancel/stop -- acknowledge casually, set transaction: null, awaitingConfirmation: false.
 The client decides whether to auto-execute or show a confirmation modal based on transaction amount -- you don't need to think about this.
 
+POST-EXECUTION NARRATION:
+When the user message starts with "__post_tx__:", they just confirmed a transaction on-chain. Parse the JSON metadata after the colon.
+Generate a 1-2 sentence narration:
+- Sentence 1: What changed ("Your 2.4 SOL is now staked as 2.4 mSOL with Marinade")
+- Sentence 2: What they earn ("At today's 7.8% APY and $147 SOL price, that earns ~$27/month")
+In LEARN mode: add one grounding sentence ("it compounds automatically — nothing to do until you want to unstake").
+In AUTO mode: keep it to one line total.
+Set transaction: null, strategies: [], awaitingConfirmation: false. Never echo "__post_tx__" in your response.
+
 PERCENTAGE COMMANDS â€" handle these patterns naturally:
 - "move X% of my SOL to yield" â†' call get_portfolio + get_yield_rates, pick best option, prepare_stake_transaction or prepare_lend_transaction for X% of their SOL balance
 - "put X% into [protocol]" â†' get_portfolio first, compute X%, build the right transaction
@@ -2663,6 +2822,8 @@ RESPONSE FORMAT â€" always respond in this exact JSON:
   "tokenChart": null or { ... exact get_token_chart result ... },
   "sentiment": null or { ... exact get_sentiment result ... },
   "riskSnapshot": null or { "scenarioLabel": "SOL âˆ'40%", "solMovePct": -40 },
+  "projection": null or { ... exact project_portfolio result ... },
+  "riskCard": null or { "tier": "safe" | "warn" | "severe", "reasons": ["..."] },
   "awaitingConfirmation": false
 }
 
@@ -2695,7 +2856,21 @@ RISKSNAPSHOT FIELD RULES:
 - solMovePct must be a number: negative for bearish (e.g. -40), positive for bullish (e.g. +50)
 - scenarioLabel: concise, no emojis (e.g. "SOL âˆ'40%", "Bear scenario", "Bull run +50%")
 - Keep your message to one sentence â€" the card does the work
-- Set riskSnapshot: null for all other responses`;
+- Set riskSnapshot: null for all other responses
+
+PROJECTION FIELD RULES:
+- Set projection to the exact object returned by project_portfolio when that tool is called
+- Always call get_yield_rates (or the protocol-specific data tool) FIRST to get live APY before projecting
+- Keep your message SHORT when projection is set — the card renders the scenarios; your job is one sentence framing (e.g. "here's what that stake looks like over 90 days in three scenarios")
+- In Learn mode: narrate the base scenario in your message ("at today's 7.8%, that's ~$X/month"). The card shows the full table.
+- Set projection: null for all other responses
+
+RISKCARD FIELD RULES:
+- When a transaction tool returns a riskEvaluation field, populate riskCard from it: { tier, reasons }
+- Mode-aware display: In LEARN mode — always set riskCard (even for "safe" tier). In ASK mode — set riskCard only for "warn" or "severe" tier. In AUTO mode — set riskCard only for "severe" tier.
+- riskCard informs your message: In LEARN mode always mention the key risk reason in 1 sentence before asking the user to confirm. In ASK mode mention it briefly for warn/severe. In AUTO mode only flag severe risks, one line.
+- Never repeat the riskCard reasons verbatim — paraphrase naturally in your message.
+- Set riskCard: null for all non-transaction responses`;
 
 
 // â"€â"€â"€ Agent loop â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -2703,14 +2878,19 @@ RISKSNAPSHOT FIELD RULES:
 const MAX_TOOL_ROUNDS = 5;
 
 async function agentChat(userMessage, conversationHistory, walletContext) {
-  const { walletAddress, solBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances } = walletContext;
+  const { walletAddress, solBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances, tradeMode } = walletContext;
+
+  const rates = await fetchLiveRates().catch(() => null);
 
   const profileCtx   = userProfile      ? profileToContext(userProfile)       : "";
   const autopilotCtx = autopilotConfig  ? autopilotToContext(autopilotConfig) : "";
   const sandboxCtx   = sandboxToContext(sandboxMode, sandboxVirtualBalances);
+  const liveRatesCtx = buildLiveRatesCtx(rates);
+  const idleCtx      = !sandboxMode ? buildIdleCtx(solBalance, rates) : "";
+  const modeCtx      = buildModeCtx(tradeMode);
   const displaySol   = sandboxMode ? (sandboxVirtualBalances?.SOL ?? 1) : solBalance;
   const walletInfo = walletAddress
-    ? `\n\nConnected wallet: ${walletAddress}\nSOL balance: ${displaySol != null ? Number(displaySol).toFixed(4) + " SOL" : "unknown"}${sandboxMode ? " (virtual)" : ""}\nNetwork: ${network || "mainnet"}${profileCtx}${autopilotCtx}${sandboxCtx}`
+    ? `\n\nConnected wallet: ${walletAddress}\nSOL balance: ${displaySol != null ? Number(displaySol).toFixed(4) + " SOL" : "unknown"}${sandboxMode ? " (virtual)" : ""}\nNetwork: ${network || "mainnet"}${profileCtx}${autopilotCtx}${sandboxCtx}${liveRatesCtx}${idleCtx}${modeCtx}`
     : "\nNo wallet connected.";
 
   const messages = [
@@ -2719,7 +2899,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
     { role: "user", content: userMessage },
   ];
 
-  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null };
+  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, riskCard: null };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await createWithRetry({
@@ -2739,6 +2919,19 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
         msg.tool_calls.map(async (tc) => {
           try {
             const result = await executeTool(tc, walletContext);
+
+            if (tc.function?.name === "project_portfolio" && result && !result.error) {
+              sidecars.projection = result;
+              return {
+                role: "tool", tool_call_id: tc.id,
+                content: JSON.stringify({
+                  protocol: result.protocol, action: result.action,
+                  apy: result.apy, days: result.days,
+                  base: result.scenarios?.base,
+                  note: "Projection captured. Set projection: true in your response. Keep message to 1-2 sentences summarising the base scenario.",
+                }),
+              };
+            }
 
             if (tc.function?.name === "get_token_chart" && result && !result.error) {
               sidecars.tokenChart = result;
@@ -2804,6 +2997,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
         sentiment:  sidecars.sentiment  || null,
         crossVenueStrategy: sidecars.crossVenueStrategy || null,
         riskSnapshot: parsed.riskSnapshot || null,
+        projection:  sidecars.projection || null,
         awaitingConfirmation: parsed.awaitingConfirmation === true,
       };
     } catch {
@@ -2812,7 +3006,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
         strategies: [], choices: [], transaction: null, tip: null, action: null, portfolio: null,
         tokenChart: sidecars.tokenChart || null, sentiment: sidecars.sentiment || null,
         crossVenueStrategy: sidecars.crossVenueStrategy || null,
-        riskSnapshot: null, awaitingConfirmation: false,
+        riskSnapshot: null, projection: null, awaitingConfirmation: false,
       };
     }
   }
@@ -2820,7 +3014,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
   return {
     message: "I hit my thinking limit on this one. Try breaking it into simpler steps.",
     strategies: [], choices: [], transaction: null, tip: null, portfolio: null,
-    tokenChart: null, sentiment: null, crossVenueStrategy: null, awaitingConfirmation: false,
+    tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, awaitingConfirmation: false,
   };
 }
 
@@ -2887,8 +3081,9 @@ const TOOL_LABELS = {
   enter_usdy: "Building USDY entry swap...",
   exit_usdy: "Building USDY exit swap...",
   get_lending_health: "Checking Kamino lending health...",
-  calculate_il: "Calculating impermanent loss...",
-  rebalance_lp: "Building LP rebalance bundle...",
+  calculate_il:      "Calculating impermanent loss...",
+  rebalance_lp:      "Building LP rebalance bundle...",
+  project_portfolio: "Projecting portfolio returns...",
 };
 
 
@@ -2904,14 +3099,19 @@ const TOOL_LABELS = {
  * @returns {Promise<Object>} final structured response
  */
 async function agentChatStream(userMessage, conversationHistory, walletContext, onProgress) {
-  const { walletAddress, solBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances } = walletContext;
+  const { walletAddress, solBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances, tradeMode } = walletContext;
+
+  const rates = await fetchLiveRates().catch(() => null);
 
   const profileCtx   = userProfile      ? profileToContext(userProfile)       : "";
   const autopilotCtx = autopilotConfig  ? autopilotToContext(autopilotConfig) : "";
   const sandboxCtx   = sandboxToContext(sandboxMode, sandboxVirtualBalances);
+  const liveRatesCtx = buildLiveRatesCtx(rates);
+  const idleCtx      = !sandboxMode ? buildIdleCtx(solBalance, rates) : "";
+  const modeCtx      = buildModeCtx(tradeMode);
   const displaySol   = sandboxMode ? (sandboxVirtualBalances?.SOL ?? 1) : solBalance;
   const walletInfo = walletAddress
-    ? `\n\nConnected wallet: ${walletAddress}\nSOL balance: ${displaySol != null ? Number(displaySol).toFixed(4) + " SOL" : "unknown"}${sandboxMode ? " (virtual)" : ""}\nNetwork: ${network || "mainnet"}${profileCtx}${autopilotCtx}${sandboxCtx}`
+    ? `\n\nConnected wallet: ${walletAddress}\nSOL balance: ${displaySol != null ? Number(displaySol).toFixed(4) + " SOL" : "unknown"}${sandboxMode ? " (virtual)" : ""}\nNetwork: ${network || "mainnet"}${profileCtx}${autopilotCtx}${sandboxCtx}${liveRatesCtx}${idleCtx}${modeCtx}`
     : "\nNo wallet connected.";
 
   const messages = [
@@ -2921,7 +3121,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
   ];
 
   onProgress("ðŸ§  Thinking...");
-  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null };
+  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, riskCard: null };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await createWithRetry({
@@ -2945,6 +3145,19 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
         msg.tool_calls.map(async (tc) => {
           try {
             const result = await executeTool(tc, walletContext);
+
+            if (tc.function?.name === "project_portfolio" && result && !result.error) {
+              sidecars.projection = result;
+              return {
+                role: "tool", tool_call_id: tc.id,
+                content: JSON.stringify({
+                  protocol: result.protocol, action: result.action,
+                  apy: result.apy, days: result.days,
+                  base: result.scenarios?.base,
+                  note: "Projection captured. Set projection: true in your response. Keep message to 1-2 sentences summarising the base scenario.",
+                }),
+              };
+            }
 
             if (tc.function?.name === "get_token_chart" && result && !result.error) {
               sidecars.tokenChart = result;
@@ -3012,6 +3225,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
         sentiment:  sidecars.sentiment  || null,
         crossVenueStrategy: sidecars.crossVenueStrategy || null,
         riskSnapshot: parsed.riskSnapshot || null,
+        projection:  sidecars.projection || null,
         awaitingConfirmation: parsed.awaitingConfirmation === true,
       };
     } catch {
@@ -3020,7 +3234,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
         strategies: [], choices: [], transaction: null, tip: null, action: null, portfolio: null,
         tokenChart: sidecars.tokenChart || null, sentiment: sidecars.sentiment || null,
         crossVenueStrategy: sidecars.crossVenueStrategy || null,
-        riskSnapshot: null, awaitingConfirmation: false,
+        riskSnapshot: null, projection: null, awaitingConfirmation: false,
       };
     }
   }

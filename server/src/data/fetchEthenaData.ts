@@ -16,47 +16,34 @@ const MINTS = {
   sUSDe: "Eh6XEPhSwoLv5wFApukmnaVSHQ6sAnoD9BmgmwQoN2sN",
 };
 
-const FALLBACK = {
-  apy: 15.0,
-  tvl: 3_000_000_000,
-};
-
-let _cache = null;
+let _cache: any = null;
 let _cacheTime = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 min
+const CACHE_TTL = 5 * 60 * 1000;
 
-/**
- * Fetch sUSDe staking APY from DefiLlama.
- */
 async function fetchEthenaData() {
   if (_cache && Date.now() - _cacheTime < CACHE_TTL) return _cache;
 
-  let apy = FALLBACK.apy;
-  let tvl = FALLBACK.tvl;
+  let apy: number | null = null;
+  let tvl: number | null = null;
 
   try {
     const res = await fetch(DEFILLAMA_POOLS, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(15000),
     });
-
     if (!res.ok) throw new Error(`DefiLlama ${res.status}`);
-
     const data = await res.json() as any;
     const pools = (data?.data ?? []).filter(
-      (p) => p.project === "ethena" && (p.symbol ?? "").toUpperCase().includes("SUSDE"),
+      (p: any) => p.project === "ethena" && (p.symbol ?? "").toUpperCase().includes("SUSDE"),
     );
-
-    // Pick the main sUSDe staking pool (highest TVL)
-    const main = pools.sort((a, b) => (b.tvlUsd ?? 0) - (a.tvlUsd ?? 0))[0];
-
+    const main = pools.sort((a: any, b: any) => (b.tvlUsd ?? 0) - (a.tvlUsd ?? 0))[0];
     if (main) {
       const rawApy = main.apy ?? main.apyBase ?? null;
       if (rawApy !== null) apy = parseFloat(rawApy.toFixed(2));
       if (main.tvlUsd) tvl = main.tvlUsd;
     }
   } catch (err: any) {
-    console.warn("[Ethena] DefiLlama fetch failed, using fallback:", err.message);
+    console.error("[Ethena] DefiLlama fetch failed:", err.message);
   }
 
   _cache = {

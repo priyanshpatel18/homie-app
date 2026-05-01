@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePrivy, useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import * as SecureStore from "expo-secure-store";
-import { MessageSquare, TrendingUp, Shield, Zap, RefreshCw, ArrowRight } from "lucide-react-native";
+import { MessageSquare, TrendingUp, Shield, Zap, RefreshCw, ArrowRight, Sparkles, QrCode } from "lucide-react-native";
 import { F } from "../theme/fonts";
 import { IMPORTED_KEY_STORE, IMPORTED_ADDR_STORE, walletImportSignal } from "../components/LoginSheet";
 import { fetchPortfolio } from "../services/api";
@@ -16,13 +16,16 @@ import { loadProfile } from "../services/userProfile";
 import { getPortfolioPnL } from "../services/pnlService";
 import { loadAutopilot, AUTOPILOT_STRATEGIES } from "../services/autopilotService";
 import AutopilotSheet from "../components/AutopilotSheet";
+import ReceiveSheet from "../components/ReceiveSheet";
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const BG     = "#000000";
 const GLASS  = "rgba(255,255,255,0.06)";
 const GLASS_H = "rgba(255,255,255,0.10)";
 const BDR    = "rgba(255,255,255,0.10)";
-const GREEN  = "#4ADE80";
+const GREEN  = "#4ADE80";           // Reserved for PRIMARY action only
+const GREEN_DIM = "rgba(74,222,128,0.55)"; // Icons, accents — not primary
+const GREEN_SUBTLE = "rgba(74,222,128,0.10)"; // Backgrounds
 const MUTED  = "rgba(255,255,255,0.35)";
 const SEC    = "rgba(255,255,255,0.60)";
 
@@ -52,13 +55,27 @@ function shortAddr(addr) {
   return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
 }
 
-// ─── Quick action chip data ───────────────────────────────────────────────────
-const QUICK_ACTIONS = [
-  { label: "Find yield",        msg: "What's the best yield I can get right now?",                                        icon: TrendingUp },
-  { label: "Rebalance",         msg: "Check my portfolio allocation and tell me what to rebalance.",                      icon: RefreshCw },
-  { label: "Protect portfolio", msg: "How do I protect my portfolio from a SOL drop?",                                    icon: Shield },
-  { label: "Swap SOL",          msg: "I want to swap some SOL — what's the best move?",                                   icon: Zap },
-];
+// ─── Contextual prompt based on wallet state ─────────────────────────────────
+function getContextualPrompt(solBalance, totalUsd, activePositions) {
+  if (solBalance == null || solBalance <= 0.001) {
+    return {
+      text: "Add some SOL to get started",
+      sub: "Scan QR or copy your address to receive funds.",
+      msg: "How do I add SOL to my wallet?",
+      showQR: true,
+    };
+  }
+  if (activePositions > 0) {
+    return null; // experienced user — skip the prompt
+  }
+  const solDisplay = solBalance.toFixed(2);
+  return {
+    text: `You have ${solDisplay} SOL doing nothing`,
+    sub: "Want to put it to work? Homie can show you how.",
+    msg: `I have ${solDisplay} SOL sitting idle — what's the best way to put it to work?`,
+    showQR: false,
+  };
+}
 
 // ─── Stat pill ────────────────────────────────────────────────────────────────
 function StatPill({ label, value, color = "#fff" }) {
@@ -91,6 +108,7 @@ export default function HomeScreen({ navigation }) {
   const [profile, setProfile]         = useState(null);
   const [autopilot, setAutopilot]     = useState(null);
   const [showAutopilot, setShowAutopilot] = useState(false);
+  const [showReceive, setShowReceive]     = useState(false);
   const [refreshing, setRefreshing]   = useState(false);
   const [loading, setLoading]         = useState(true);
 
@@ -172,7 +190,7 @@ export default function HomeScreen({ navigation }) {
         <ScrollView
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={GREEN} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={GREEN_DIM} />}
         >
           {/* ── Greeting ── */}
           <View style={s.header}>
@@ -185,7 +203,7 @@ export default function HomeScreen({ navigation }) {
               )}
             </View>
             <TouchableOpacity style={s.chatIconBtn} onPress={() => openChat()} activeOpacity={0.8}>
-              <MessageSquare size={20} color={GREEN} strokeWidth={2} />
+              <MessageSquare size={20} color={GREEN_DIM} strokeWidth={2} />
             </TouchableOpacity>
           </View>
 
@@ -219,7 +237,7 @@ export default function HomeScreen({ navigation }) {
                 <StatPill
                   label="Positions"
                   value={activePositions > 0 ? `${activePositions} active` : "None"}
-                  color={activePositions > 0 ? GREEN : MUTED}
+                  color={activePositions > 0 ? GREEN_DIM : MUTED}
                 />
                 <StatPill
                   label="Tokens"
@@ -228,57 +246,71 @@ export default function HomeScreen({ navigation }) {
                 />
               </View>
 
-              {/* ── Quick actions ── */}
-              <Text style={s.sectionTitle}>Quick actions</Text>
-              <View style={s.actionsGrid}>
-                {QUICK_ACTIONS.map(({ label, msg, icon: Icon }) => (
+              {/* ── Contextual prompt (replaces quick actions grid for new users) ── */}
+              {(() => {
+                const prompt = getContextualPrompt(solBalance, totalUsd, activePositions);
+                if (!prompt) return null;
+                return (
                   <TouchableOpacity
-                    key={label}
-                    style={s.actionChip}
-                    onPress={() => openChat(msg)}
-                    activeOpacity={0.75}
+                    style={s.contextCard}
+                    onPress={() => prompt.showQR ? setShowReceive(true) : openChat(prompt.msg)}
+                    activeOpacity={0.8}
                   >
-                    <Icon size={15} color={GREEN} strokeWidth={2} />
-                    <Text style={s.actionLabel}>{label}</Text>
+                    <View style={s.contextLeft}>
+                      <View style={s.contextBadge}>
+                        {prompt.showQR
+                          ? <QrCode size={18} color={GREEN_DIM} strokeWidth={2} />
+                          : <Sparkles size={18} color={GREEN_DIM} strokeWidth={2} />}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.contextTitle}>{prompt.text}</Text>
+                        <Text style={s.contextSub}>{prompt.sub}</Text>
+                      </View>
+                    </View>
+                    <ArrowRight size={14} color={MUTED} strokeWidth={2} />
                   </TouchableOpacity>
-                ))}
-              </View>
+                );
+              })()}
 
-              {/* ── Autopilot card ── */}
-              <Text style={s.sectionTitle}>Autopilot</Text>
-              <TouchableOpacity
-                style={[s.autopilotCard, autopilot?.enabled && s.autopilotCardActive]}
-                onPress={() => setShowAutopilot(true)}
-                activeOpacity={0.8}
-              >
-                <View style={s.autopilotLeft}>
-                  <View style={[s.autopilotBadge, { backgroundColor: autopilot?.enabled ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)" }]}>
-                    <Zap size={16} color={autopilot?.enabled ? GREEN : MUTED} strokeWidth={2.5} />
-                  </View>
-                  <View>
-                    <Text style={s.autopilotTitle}>
-                      {autopilot?.enabled
-                        ? AUTOPILOT_STRATEGIES[autopilot.strategyId]?.name ?? "Active"
-                        : "Not configured"}
-                    </Text>
-                    <Text style={s.autopilotSub}>
-                      {autopilot?.enabled
-                        ? `Alerts when drift ≥ ${autopilot.driftThreshold ?? 10}%`
-                        : "Tap to set up your strategy"}
-                    </Text>
-                  </View>
-                </View>
-                <View style={[s.statusBadge, { backgroundColor: autopilot?.enabled ? "rgba(74,222,128,0.12)" : "rgba(255,255,255,0.06)" }]}>
-                  <Text style={[s.statusText, { color: autopilot?.enabled ? GREEN : MUTED }]}>
-                    {autopilot?.enabled ? "ON" : "OFF"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              {/* ── Autopilot card — hidden until user has at least one action ── */}
+              {(activePositions > 0 || autopilot?.enabled) && (
+                <>
+                  <Text style={s.sectionTitle}>Autopilot</Text>
+                  <TouchableOpacity
+                    style={[s.autopilotCard, autopilot?.enabled && s.autopilotCardActive]}
+                    onPress={() => setShowAutopilot(true)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={s.autopilotLeft}>
+                      <View style={[s.autopilotBadge, { backgroundColor: autopilot?.enabled ? GREEN_SUBTLE : "rgba(255,255,255,0.06)" }]}>
+                        <Zap size={16} color={autopilot?.enabled ? GREEN_DIM : MUTED} strokeWidth={2.5} />
+                      </View>
+                      <View>
+                        <Text style={s.autopilotTitle}>
+                          {autopilot?.enabled
+                            ? AUTOPILOT_STRATEGIES[autopilot.strategyId]?.name ?? "Active"
+                            : "Not configured"}
+                        </Text>
+                        <Text style={s.autopilotSub}>
+                          {autopilot?.enabled
+                            ? `Alerts when drift ≥ ${autopilot.driftThreshold ?? 10}%`
+                            : "Tap to set up your strategy"}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[s.statusBadge, { backgroundColor: autopilot?.enabled ? GREEN_SUBTLE : "rgba(255,255,255,0.06)" }]}>
+                      <Text style={[s.statusText, { color: autopilot?.enabled ? GREEN_DIM : MUTED }]}>
+                        {autopilot?.enabled ? "ON" : "OFF"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </>
+              )}
 
               {/* ── Profile nudge (if not set) ── */}
               {!profile && (
                 <TouchableOpacity style={s.nudgeCard} onPress={() => openChat("Set up my risk profile")} activeOpacity={0.8}>
-                  <Shield size={16} color={GREEN} strokeWidth={2} />
+                  <Shield size={16} color={GREEN_DIM} strokeWidth={2} />
                   <View style={{ flex: 1 }}>
                     <Text style={s.nudgeTitle}>Set up your risk profile</Text>
                     <Text style={s.nudgeSub}>So Homie knows what to recommend for you</Text>
@@ -298,12 +330,20 @@ export default function HomeScreen({ navigation }) {
           onSaved={(cfg) => setAutopilot(cfg)}
         />
 
-        {/* ── Ask Homie CTA ── */}
+        {/* Receive SOL sheet — QR + address */}
+        <ReceiveSheet
+          visible={showReceive}
+          walletAddress={walletAddress}
+          onClose={() => setShowReceive(false)}
+        />
+
+        {/* ── Ask Homie CTA — dominant element ── */}
         <View style={s.footer}>
           <TouchableOpacity style={s.chatBtn} onPress={() => openChat()} activeOpacity={0.85}>
-            <MessageSquare size={18} color="#000" strokeWidth={2.5} />
+            <MessageSquare size={22} color="#000" strokeWidth={2.5} />
             <Text style={s.chatBtnText}>Ask Homie anything</Text>
           </TouchableOpacity>
+          <Text style={s.chatBtnHint}>Your DeFi guide — ask questions, get answers, execute trades</Text>
         </View>
       </SafeAreaView>
     </View>
@@ -322,8 +362,8 @@ const s = StyleSheet.create({
   addr:     { color: MUTED, fontSize: 13, fontFamily: F.regular, marginTop: 4 },
   chatIconBtn: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: "rgba(74,222,128,0.10)",
-    borderWidth: 1, borderColor: "rgba(74,222,128,0.20)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.10)",
     alignItems: "center", justifyContent: "center",
   },
 
@@ -352,20 +392,26 @@ const s = StyleSheet.create({
 
   sectionTitle: { color: SEC, fontSize: 12, fontFamily: F.semibold, letterSpacing: 0.5, marginBottom: 10 },
 
-  actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
-  actionChip: {
-    flexDirection: "row", alignItems: "center", gap: 7,
-    backgroundColor: GLASS, borderRadius: 20,
+  // ── Contextual prompt card ──
+  contextCard: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: GLASS, borderRadius: 16,
     borderWidth: 1, borderColor: BDR,
-    paddingHorizontal: 14, paddingVertical: 10,
+    padding: 16, marginBottom: 20,
   },
-  actionLabel: { color: "#fff", fontSize: 13, fontFamily: F.medium },
+  contextLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  contextBadge: {
+    width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center",
+    backgroundColor: GREEN_SUBTLE,
+  },
+  contextTitle: { color: "#fff", fontSize: 14, fontFamily: F.semibold },
+  contextSub: { color: MUTED, fontSize: 12, fontFamily: F.regular, marginTop: 3 },
 
   nudgeCard: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: "rgba(74,222,128,0.06)",
+    backgroundColor: GLASS,
     borderRadius: 16, borderWidth: 1,
-    borderColor: "rgba(74,222,128,0.15)",
+    borderColor: BDR,
     padding: 16,
   },
   nudgeTitle: { color: "#fff", fontSize: 14, fontFamily: F.semibold },
@@ -388,11 +434,21 @@ const s = StyleSheet.create({
   statusBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   statusText:  { fontSize: 11, fontFamily: F.headBold, letterSpacing: 0.5 },
 
-  footer: { paddingHorizontal: 20, paddingBottom: 16, paddingTop: 8 },
+  footer: { paddingHorizontal: 20, paddingBottom: 16, paddingTop: 10 },
   chatBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: GREEN, borderRadius: 18,
-    paddingVertical: 16,
+    backgroundColor: GREEN, borderRadius: 20,
+    paddingVertical: 20,
+    // Subtle glow to draw the eye
+    shadowColor: GREEN,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  chatBtnText: { color: "#000", fontSize: 16, fontFamily: F.headBold },
+  chatBtnText: { color: "#000", fontSize: 17, fontFamily: F.headBold, letterSpacing: 0.3 },
+  chatBtnHint: {
+    color: MUTED, fontSize: 11, fontFamily: F.regular,
+    textAlign: "center", marginTop: 8,
+  },
 });
