@@ -10,6 +10,7 @@ const { title, description, ogImage, baseURL, socials } = {
     xHandle: "HeyHomieAI",
     xUrl: "https://x.com/HeyHomieAI",
     githubOrg: "HeyHomieAI",
+    linkedinUrl: "https://www.linkedin.com/company/heyhomieai/",
   },
 };
 

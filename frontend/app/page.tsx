@@ -1,4 +1,4 @@
-import { Mail01Icon, NewTwitterIcon, TelegramIcon } from "@hugeicons/core-free-icons";
+import { Linkedin01Icon, Mail01Icon, NewTwitterIcon, TelegramIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -42,7 +42,19 @@ export default function Home() {
             </span>
           </Link>
 
-          <nav aria-label="Primary" className="flex items-center">
+          <nav aria-label="Primary" className="flex items-center gap-6">
+            <Link
+              href="/chat"
+              className="hh-link text-sm text-white/75 hover:text-white"
+            >
+              Ask
+            </Link>
+            <Link
+              href="/blog"
+              className="hh-link text-sm text-white/75 hover:text-white"
+            >
+              Blog
+            </Link>
             <a
               href="https://x.com/HeyHomieAI"
               target="_blank"
@@ -302,6 +314,11 @@ export default function Home() {
               </h3>
               <ul className="mt-4 space-y-2.5 text-sm text-white/75">
                 <li>
+                  <Link href="/blog" className="hh-link hover:text-white">
+                    Blog
+                  </Link>
+                </li>
+                <li>
                   <a
                     href="https://x.com/HeyHomieAI"
                     target="_blank"
@@ -319,6 +336,16 @@ export default function Home() {
                     className="hh-link hover:text-white"
                   >
                     Telegram
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://www.linkedin.com/company/heyhomieai/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hh-link hover:text-white"
+                  >
+                    LinkedIn
                   </a>
                 </li>
                 <li>
@@ -369,6 +396,20 @@ export default function Home() {
               >
                 <HugeiconsIcon
                   icon={TelegramIcon}
+                  size={18}
+                  strokeWidth={1.9}
+                  aria-hidden
+                />
+              </Link>
+              <Link
+                href="https://www.linkedin.com/company/heyhomieai/"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Follow HeyHomieAI on LinkedIn"
+                className="inline-flex size-10 items-center justify-center rounded-full text-white/65 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00F666] focus-visible:ring-offset-2 focus-visible:ring-offset-[#040405]"
+              >
+                <HugeiconsIcon
+                  icon={Linkedin01Icon}
                   size={18}
                   strokeWidth={1.9}
                   aria-hidden
