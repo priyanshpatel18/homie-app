@@ -29,16 +29,16 @@ will grow into the live product UI.
 ### Prerequisites
 
 - Node.js 18+
-- pnpm 9.x
+- npm 10+
 
 ### Installation
 
 ```bash
 # Install dependencies (run from repo root: homie-app/)
-pnpm install
+npm install
 
 # Run development server (from this directory)
-pnpm dev
+npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to view the app.
@@ -52,25 +52,25 @@ no required envs at the moment; partner integrations will document their own.
 
 ```bash
 # Development server
-pnpm dev
+npm run dev
 
 # Build for production
-pnpm build
+npm run build
 
 # Start production server
-pnpm start
+npm run start
 
 # Lint
-pnpm lint
+npm run lint
 ```
 
 You can also run these from the repo root via the workspace scripts:
 
 ```bash
-pnpm frontend:dev
-pnpm frontend:build
-pnpm frontend:lint
-pnpm frontend:start
+npm run frontend:dev
+npm run frontend:build
+npm run frontend:lint
+npm run frontend:start
 ```
 
 ## Project Structure

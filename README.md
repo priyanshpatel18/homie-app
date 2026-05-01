@@ -16,24 +16,33 @@ hackathon.
 | [`sdk/`](./sdk) | Publishable client SDKs (`@homie/sdk`) shared across web, mobile, and future platforms | [`sdk/homie-sdk/README.md`](./sdk/homie-sdk/README.md) |
 | [`packages/`](./packages) | Internal shared workspace libraries (domain packages land here) | [`packages/`](./packages) |
 
-**Package manager:** `pnpm` (see `packageManager` in [`package.json`](./package.json)).
+**Package manager:** `npm` (see `packageManager` in [`package.json`](./package.json)).
 **Task runner:** Turborepo.
+
+> **Mobile is intentionally outside the npm workspace.** Expo/Metro doesn't
+> play well with hoisted workspace deps, so `mobile/` keeps its own
+> `package-lock.json` and consumes `@homie/sdk` via `file:../sdk/homie-sdk`.
+> Use `npm run mobile:install` to install it.
 
 ## Quick Start (Contributors)
 
-1. Install dependencies:
+1. Install workspace dependencies:
    ```bash
-   pnpm install
+   npm install
    ```
-2. Build the shared SDK once so workspaces can resolve it:
+2. Install mobile dependencies (separate, outside workspace):
    ```bash
-   pnpm sdk:build
+   npm run mobile:install
    ```
-3. Run the pieces you need:
+3. Build the shared SDK once so workspaces can resolve it:
    ```bash
-   pnpm server:dev      # Express agent backend on http://localhost:3000
-   pnpm frontend:dev    # Next.js web frontend on http://localhost:3001
-   pnpm mobile:dev      # Expo dev server (then press i / a)
+   npm run sdk:build
+   ```
+4. Run the pieces you need:
+   ```bash
+   npm run server:dev      # Express agent backend on http://localhost:3000
+   npm run frontend:dev    # Next.js web frontend on http://localhost:3001
+   npm run mobile:dev      # Expo dev server (then press i / a)
    ```
 
 For Vercel monorepo deploys, set the project **Root Directory** to `frontend`.
@@ -43,41 +52,43 @@ For Vercel monorepo deploys, set the project **Root Directory** to `frontend`.
 ### Root
 
 ```bash
-pnpm install
-pnpm frontend:dev
-pnpm frontend:build
-pnpm frontend:lint
-pnpm frontend:start
-pnpm mobile:dev
-pnpm mobile:android
-pnpm mobile:ios
-pnpm mobile:web
-pnpm server:dev
-pnpm server:start
-pnpm sdk:build
-pnpm sdk:dev
-pnpm build
-pnpm lint
-pnpm check-types
-pnpm format
+npm install
+npm run frontend:dev
+npm run frontend:build
+npm run frontend:lint
+npm run frontend:start
+npm run mobile:install
+npm run mobile:dev
+npm run mobile:android
+npm run mobile:ios
+npm run mobile:web
+npm run server:dev
+npm run server:start
+npm run sdk:build
+npm run sdk:dev
+npm run build
+npm run lint
+npm run check-types
+npm run format
 ```
 
 ### Web Frontend (`/frontend`)
 
 ```bash
-pnpm dev
-pnpm build
-pnpm lint
-pnpm start
+npm run dev
+npm run build
+npm run lint
+npm run start
 ```
 
 ### Mobile (`/mobile`)
 
 ```bash
-pnpm start         # Expo dev server (Expo Go)
-pnpm android       # Build + run on Android device/emulator
-pnpm ios           # Build + run on iOS (macOS + Xcode required)
-pnpm web           # Expo web target
+npm install        # mobile maintains its own package-lock.json
+npm start          # Expo dev server (Expo Go)
+npm run android    # Build + run on Android device/emulator
+npm run ios        # Build + run on iOS (macOS + Xcode required)
+npm run web        # Expo web target
 ```
 
 The mobile app reads `EXPO_PUBLIC_API_URL` from `mobile/.env` to reach the
@@ -93,8 +104,8 @@ backend. Defaults useful per environment:
 ### Server (`/server`)
 
 ```bash
-pnpm dev           # node --watch index.js
-pnpm start         # node index.js
+npm run dev        # tsx watch src/index.ts
+npm start          # node dist/index.js
 ```
 
 Copy `server/.env.example` to `server/.env` and fill in `LLM_API_KEY` (OpenRouter)
@@ -104,14 +115,14 @@ on `http://0.0.0.0:3000`.
 ### SDK (`/sdk/homie-sdk`)
 
 ```bash
-pnpm build         # tsc → dist/
-pnpm dev           # tsc --watch
-pnpm check-types
+npm run build      # tsc → dist/
+npm run dev        # tsc --watch
+npm run check-types
 ```
 
-The SDK is wired into `mobile` and `server` via `"@homie/sdk": "workspace:*"`.
-Web (`frontend`) can adopt it the same way when it needs a typed client to the
-agent backend.
+The SDK is wired into `server` and `frontend` via `"@homie/sdk": "*"`
+(resolved through npm workspaces). `mobile` lives outside the workspace and
+consumes it via `"@homie/sdk": "file:../sdk/homie-sdk"`.
 
 ## Adding a New Workspace Package
 
@@ -119,10 +130,11 @@ The monorepo is set up to grow into more shared libraries (DFlow, Kamino,
 Jupiter, partner integrations, wallet adapters, etc.). Two slots exist:
 
 - **`packages/<name>/`** — internal-only shared libraries. Reference them from
-  workspaces with `"<name>": "workspace:*"` in dependencies.
+  other workspaces with `"<name>": "*"` in dependencies.
 - **`sdk/<name>/`** — publishable SDKs intended for external consumers.
 
-Both slots are picked up automatically by [`pnpm-workspace.yaml`](./pnpm-workspace.yaml).
+Both slots are picked up automatically by the `workspaces` array in the root
+[`package.json`](./package.json) (`packages/*` and `sdk/*`).
 
 ## Commit and PR Conventions
 
@@ -139,5 +151,5 @@ Allowed types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `perf`,
 ## Requirements
 
 - **Node.js** `>= 18` (see `engines` in [`package.json`](./package.json))
-- **pnpm** `9.x`
-- **Expo CLI** is invoked via `pnpm` (no global install required)
+- **npm** `>= 10`
+- **Expo CLI** is invoked via `npm` scripts (no global install required)

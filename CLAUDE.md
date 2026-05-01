@@ -9,30 +9,35 @@ Users chat with an AI agent that can read their portfolio, fetch live market
 data and yield rates, and build/sign Solana transactions (staking via Marinade,
 lending via Kamino, swapping via Jupiter, and more).
 
-The repo is a `pnpm` + Turborepo monorepo:
+The repo is an `npm` workspaces + Turborepo monorepo:
 
-- **`frontend/`** — Next.js (App Router) web frontend
-- **`mobile/`** — React Native + Expo iOS/Android app
-- **`server/`** — Express.js agent backend
-- **`sdk/homie-sdk/`** — `@homie/sdk`, the typed client used by mobile and server (and any future web/extension)
+- **`frontend/`** — Next.js (App Router) web frontend (workspace)
+- **`mobile/`** — React Native + Expo iOS/Android app (**not** in the workspace; installed separately to avoid Metro/hoisting issues — uses `file:../sdk/homie-sdk` to consume the SDK)
+- **`server/`** — Express.js agent backend (workspace)
+- **`sdk/homie-sdk/`** — `@homie/sdk`, the typed client used by mobile and server (and any future web/extension) (workspace)
 - **`packages/`** — internal shared workspace libraries (domain packages land here)
+
+A root `.npmrc` sets `legacy-peer-deps=true` because some Solana SDK peer
+ranges in `server/` conflict (e.g. `@orca-so/whirlpools` vs `@solana/kit`).
+Don't remove that without verifying installs still resolve.
 
 ## Commands
 
-Run all pnpm commands from the repo root unless noted otherwise.
+Run all npm commands from the repo root unless noted otherwise.
 
 ### Bootstrap
 
 ```bash
-pnpm install
-pnpm sdk:build           # build @homie/sdk once so workspaces resolve dist/
+npm install              # installs root + frontend + server + sdk workspaces
+npm run mobile:install   # installs mobile (separate, outside workspace)
+npm run sdk:build        # build @homie/sdk once so workspaces resolve dist/
 ```
 
 ### Backend server (`server/`)
 
 ```bash
-pnpm server:dev          # node --watch (auto-reload)
-pnpm server:start        # production (no watch)
+npm run server:dev       # tsx watch (auto-reload)
+npm run server:start     # production (no watch)
 # Runs on http://0.0.0.0:3000
 ```
 
@@ -42,10 +47,10 @@ OpenRouter key. Optional: `JUP_API_KEY`, `BIRDEYE_API_KEY`, `SANCTUM_API_KEY`.
 ### Mobile app (`mobile/`)
 
 ```bash
-pnpm mobile:dev          # Expo dev server
-pnpm mobile:android      # Build + run on Android device/emulator
-pnpm mobile:ios          # Build + run on iOS (macOS + Xcode required)
-pnpm mobile:web          # Expo web target
+npm run mobile:dev       # Expo dev server
+npm run mobile:android   # Build + run on Android device/emulator
+npm run mobile:ios       # Build + run on iOS (macOS + Xcode required)
+npm run mobile:web       # Expo web target
 ```
 
 `mobile/.env` exposes `EXPO_PUBLIC_API_URL` to the bundle. Use
@@ -55,17 +60,17 @@ simulator, or `http://<LAN-IP>:3000` for physical devices.
 ### Web frontend (`frontend/`)
 
 ```bash
-pnpm frontend:dev
-pnpm frontend:build
-pnpm frontend:lint
-pnpm frontend:start
+npm run frontend:dev
+npm run frontend:build
+npm run frontend:lint
+npm run frontend:start
 ```
 
 ### Shared SDK (`sdk/homie-sdk/`)
 
 ```bash
-pnpm sdk:build           # tsc → dist/
-pnpm sdk:dev             # tsc --watch
+npm run sdk:build        # tsc → dist/
+npm run sdk:dev          # tsc --watch
 ```
 
 No test runner or lint configuration exists for the agent backend. The
@@ -128,8 +133,10 @@ mobile (ChatScreen) ──► @homie/sdk ──► server /api/chat ──► ag
 `@homie/sdk` is a zero-runtime-deps TypeScript client. It exposes `init`,
 `chat`, `chatStream`, `conversation`, and data fetchers (`fetchPortfolio`,
 `fetchPrices`, `fetchChart`, `fetchRates`, `fetchSentiment`, `fetchEmbedding`).
-Mobile and server depend on it via `"@homie/sdk": "workspace:*"`. Web frontend
-should adopt the same pattern when it needs a typed client.
+Server and frontend depend on it via `"@homie/sdk": "*"` (resolved through npm
+workspaces). Mobile, which lives outside the workspace, depends on it via
+`"@homie/sdk": "file:../sdk/homie-sdk"` so Metro can resolve it without
+relying on hoisting.
 
 ### LLM configuration
 - Provider: OpenRouter (`https://openrouter.ai/api/v1`)
