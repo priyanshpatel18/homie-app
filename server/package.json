@@ -13,7 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@homie/sdk": "workspace:*",
+    "@homie/sdk": "*",
     "@anthropic-ai/sdk": "^0.81.0",
     "@google/generative-ai": "^0.24.1",
     "@kamino-finance/klend-sdk": "^7.3.22",

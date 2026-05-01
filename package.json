@@ -1,20 +1,27 @@
 {
   "name": "homie-app",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "server",
+    "packages/*",
+    "sdk/*"
+  ],
   "scripts": {
-    "frontend:dev": "pnpm --filter frontend dev",
-    "frontend:build": "pnpm --filter frontend build",
-    "frontend:lint": "pnpm --filter frontend lint",
-    "frontend:start": "pnpm --filter frontend start",
-    "mobile:dev": "pnpm --filter mobile start",
-    "mobile:start": "pnpm --filter mobile start",
-    "mobile:android": "pnpm --filter mobile android",
-    "mobile:ios": "pnpm --filter mobile ios",
-    "mobile:web": "pnpm --filter mobile web",
-    "server:dev": "pnpm --filter server dev",
-    "server:start": "pnpm --filter server start",
-    "sdk:build": "pnpm --filter @homie/sdk build",
-    "sdk:dev": "pnpm --filter @homie/sdk dev",
+    "frontend:dev": "npm run dev -w frontend",
+    "frontend:build": "npm run build -w frontend",
+    "frontend:lint": "npm run lint -w frontend",
+    "frontend:start": "npm run start -w frontend",
+    "mobile:install": "npm install --prefix mobile",
+    "mobile:dev": "npm start --prefix mobile",
+    "mobile:start": "npm start --prefix mobile",
+    "mobile:android": "npm run android --prefix mobile",
+    "mobile:ios": "npm run ios --prefix mobile",
+    "mobile:web": "npm run web --prefix mobile",
+    "server:dev": "npm run dev -w server",
+    "server:start": "npm run start -w server",
+    "sdk:build": "npm run build -w @homie/sdk",
+    "sdk:dev": "npm run dev -w @homie/sdk",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
@@ -26,8 +33,9 @@
     "turbo": "^2.9.6",
     "typescript": "5.9.2"
   },
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "npm@10.9.0",
   "engines": {
-    "node": ">=18"
+    "node": ">=18",
+    "npm": ">=10"
   }
 }
