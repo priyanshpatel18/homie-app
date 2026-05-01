@@ -11,6 +11,7 @@ import { AnimatePresence, motion } from "motion/react";
 import * as React from "react";
 
 import { Composer } from "./composer";
+import { ConnectButton } from "./connect-button";
 import { MessageBubble, ThinkingBubble } from "./message-bubble";
 import { QuickActions } from "./quick-actions";
 import { StrategyCard } from "./strategy-card";
@@ -133,6 +134,10 @@ export function ChatView() {
 
   return (
     <div className="relative z-10 flex min-h-dvh flex-col">
+      <div className="sticky top-0 z-20 flex items-center justify-end gap-3 px-5 pt-4 sm:px-8">
+        <ConnectButton variant="primary" />
+      </div>
+
       {isEmpty ? (
         <div className="flex flex-1 flex-col items-center justify-center px-5 pb-12 pt-20 sm:px-8">
           <motion.div
