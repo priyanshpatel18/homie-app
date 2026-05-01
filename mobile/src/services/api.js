@@ -1,6 +1,6 @@
 // Priority: EXPO_PUBLIC_API_URL env var → Android emulator fallback
-// Set EXPO_PUBLIC_API_URL in homie-app/.env for real devices (e.g. http://192.168.1.x:3000)
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:3000";
+// Set EXPO_PUBLIC_API_URL in homie-app/.env for real devices (e.g. http://192.168.1.x:4000)
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:4000";
 
 import {
   chat,

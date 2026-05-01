@@ -88,7 +88,7 @@ const PRICE_CACHE = { data: {}, fetchedAt: 0, TTL: 30_000 };
 // Binance is used for SOL — it's public, no API key needed, very reliable.
 // For everything else we call our backend proxy (which has the JUP key).
 // Import lazily to avoid circular dep — just use the same base URL string.
-const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:3000";
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:4000";
 
 async function fetchSolPriceViaBinance() {
   const res = await fetch(
