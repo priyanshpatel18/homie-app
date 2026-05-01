@@ -16,6 +16,8 @@
     "@paper-design/shaders-react": "^0.0.76",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "gray-matter": "^4.0.3",
+    "marked": "^14.1.4",
     "motion": "^12.38.0",
     "next": "16.2.4",
     "react": "19.2.4",
@@ -35,6 +37,8 @@
     "typescript": "^5"
   },
   "optionalDependencies": {
+    "@next/swc-darwin-arm64": "16.2.4",
+    "@next/swc-linux-x64-gnu": "16.2.4",
     "@tailwindcss/oxide-linux-x64-gnu": "^4",
     "lightningcss-linux-x64-gnu": "^1.32.0"
   }
