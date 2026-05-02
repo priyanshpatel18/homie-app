@@ -129,9 +129,15 @@ chatRouter.post("/stream", requireAuth, requireWalletOwnership, async (req: Requ
     res.end();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("Stream agent error:", msg);
+    console.error("Stream agent error:", msg, err instanceof Error ? err.stack : "");
+    // Surface the real reason so the client can show a useful message
+    const clientMsg = msg.includes("Jupiter")   ? `Jupiter failed: ${msg.split(":").slice(-1)[0].trim()}`
+                    : msg.includes("429")        ? "Rate limited — wait a moment and try again."
+                    : msg.includes("timeout")    ? "Request timed out — try again."
+                    : msg.includes("API key")    ? "Server config error — contact support."
+                    : "Something broke. Try again.";
     res.write(
-      `data: ${JSON.stringify({ type: "error", text: "Something broke. Try again." })}\n\n`
+      `data: ${JSON.stringify({ type: "error", text: clientMsg })}\n\n`
     );
     res.end();
   }

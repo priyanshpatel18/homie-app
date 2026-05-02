@@ -16,7 +16,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { X, ArrowUp, Mic, MicOff } from "lucide-react-native";
 import { F } from "../theme/fonts";
-import { lockSuppression } from "../../App";
+import { lockSuppression } from "../state/lockSuppression";
 
 const { width: SW } = Dimensions.get("window");
 const GREEN = "#4ADE80";

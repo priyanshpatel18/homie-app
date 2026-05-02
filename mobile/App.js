@@ -9,7 +9,7 @@ import { fontAssets } from "./src/theme/fonts";
 SplashScreen.preventAutoHideAsync();
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { PrivyProvider, usePrivy, useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { PrivyProvider, usePrivy, useEmbeddedSolanaWallet, getAccessToken } from "@privy-io/expo";
 import { PrivyElements } from "@privy-io/expo/ui";
 import * as SecureStore from "expo-secure-store";
 import { IMPORTED_ADDR_STORE, walletImportSignal } from "./src/components/LoginSheet";
@@ -17,7 +17,7 @@ import PasscodeScreen from "./src/components/PasscodeScreen";
 import { hasPasscode } from "./src/services/passcode";
 
 // Suppress re-lock during voice input — speech recognition briefly backgrounds the app
-export const lockSuppression = { active: false };
+import { lockSuppression } from "./src/state/lockSuppression";
 
 import OnboardingScreen from "./src/screens/OnboardingScreen";
 import HomeScreen from "./src/screens/HomeScreen";
@@ -83,15 +83,15 @@ function RootNavigator() {
 
   // Keep the auth token fresh — refresh on login and on app foreground resume
   useEffect(() => {
-    if (!authenticated || !privyState.getAccessToken) return;
-    privyState.getAccessToken().then(setAuthToken).catch(() => {});
+    if (!authenticated) return;
+    getAccessToken().then(setAuthToken).catch(() => {});
   }, [authenticated]);
 
   useEffect(() => {
-    if (!authenticated || !privyState.getAccessToken) return;
+    if (!authenticated) return;
     const sub = AppState.addEventListener("change", (next) => {
       if (next === "active") {
-        privyState.getAccessToken().then(setAuthToken).catch(() => {});
+        getAccessToken().then(setAuthToken).catch(() => {});
       }
     });
     return () => sub.remove();

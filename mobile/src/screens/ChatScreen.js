@@ -39,6 +39,7 @@ import PnLCard from "../components/PnLCard";
 import HistorySheet from "../components/HistorySheet";
 import PositionsSheet from "../components/PositionsSheet";
 import RiskSnapshotCard from "../components/RiskSnapshotCard";
+import ProjectionCard from "../components/ProjectionCard";
 import OnboardingSheet, { shouldShowOnboarding, getSavedTradeMode } from "../components/OnboardingSheet";
 import HomieLogoMain from "../components/HomieLogoMain";
 import HomieLogoThinking from "../components/HomieLogoThinking";
@@ -47,10 +48,13 @@ import SandboxDashboard from "../components/SandboxDashboard";
 import VoiceInputBubble from "../components/VoiceInputBubble";
 import ReceiveSheet from "../components/ReceiveSheet";
 import { InlineWalletQR } from "../components/ReceiveSheet";
+import MultiplyCard from "../components/MultiplyCard";
 import Markdown from "react-native-markdown-display";
 import { F } from "../theme/fonts";
 import Svg, { Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { askHomieStream, fetchPortfolio } from "../services/api";
+import { getAccessToken } from "@privy-io/expo";
+import { setAuthToken } from "../services/authStore";
 import { loadProfile } from "../services/userProfile";
 import { loadConfirmThreshold, saveConfirmThreshold } from "../services/confirmSettings";
 import RiskProfileSheet from "../components/RiskProfileSheet";
@@ -1144,8 +1148,14 @@ export default function ChatScreen({ route, navigation }) {
       return "took too long to respond — network might be slow, try again.";
     if (msg.includes("500") || msg.includes("502") || msg.includes("503"))
       return "something broke on my end, not yours. give it a sec and try again.";
-    if (msg.includes("429"))
+    if (msg.includes("429") || msg.includes("rate limit"))
       return "I'm getting too many requests at once — wait a moment and send that again.";
+    if (msg.includes("jupiter"))
+      return "Jupiter swap failed — their API may be busy. try again in a moment.";
+    if (msg.includes("stream ended without"))
+      return "response didn't complete — network hiccup, try again.";
+    // Pass through server-provided messages that are already user-friendly
+    if (err?.message && err.message.length < 120) return err.message;
     return "something went sideways just now. try sending that again.";
   }
 
@@ -1198,6 +1208,10 @@ export default function ChatScreen({ route, navigation }) {
     ];
 
     try {
+      // Refresh token immediately before request — Privy may not have resolved on first authenticated event
+      const freshToken = await getAccessToken().catch(() => null);
+      if (freshToken) setAuthToken(freshToken);
+
       const data = await askHomieStream(
         text,
         { walletAddress, solBalance: displayBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances: sandboxMode ? sandboxState?.balances : null, tradeMode },
@@ -1227,6 +1241,8 @@ export default function ChatScreen({ route, navigation }) {
         sentiment: data.sentiment || null,
         crossVenueStrategy: data.crossVenueStrategy || null,
         riskSnapshot: data.riskSnapshot || null,
+        projection: data.projection || null,
+        multiply: data.multiply || null,
         awaitingConfirmation: data.awaitingConfirmation === true,
         // Auto-attach wallet QR when agent talks about receiving/funding and balance is low
         showWalletQR: (() => {
@@ -1588,6 +1604,13 @@ export default function ChatScreen({ route, navigation }) {
               portfolio={portfolio ? { ...portfolio, solPrice: solPrice ?? 0 } : null}
               solBalance={displayBalance}
               onHedge={(from, to, amtUsd) => send(`hedge ${from} to ${to}, about $${amtUsd.toFixed(0)} worth`)}
+            />
+          )}
+          {item.projection && <ProjectionCard data={item.projection} />}
+          {item.multiply && (
+            <MultiplyCard
+              data={item.multiply}
+              onExecute={(lev, coll) => send(`Open Kamino Multiply at ${lev.toFixed(1)}x leverage on ${item.multiply.collateralAmount ?? ""} ${coll ?? item.multiply.collateral ?? "SOL"}`)}
             />
           )}
           {item.strategies?.length > 0 && (
