@@ -75,7 +75,11 @@ export default function PortfolioCard({ portfolio }) {
 
   useEffect(() => {
     const mints = [SOL_MINT, ...tokens.map((t) => t.mint)];
-    fetchPricesForMints(mints)
+    // Also include mints from positions (staked mSOL, etc.)
+    for (const pos of portfolio.positions || []) {
+      if (pos.type === "liquid_stake") mints.push(MSOL_MINT);
+    }
+    fetchPricesForMints([...new Set(mints)])
       .then(setPrices)
       .catch(() => setPrices({}));
   }, [walletAddress]);
@@ -88,7 +92,17 @@ export default function PortfolioCard({ portfolio }) {
     usdValue: (prices?.[t.mint] ?? 0) * t.balance,
   })).sort((a, b) => b.usdValue - a.usdValue);
 
-  const totalUsd = solUsd + enriched.reduce((s, t) => s + t.usdValue, 0);
+  const totalUsd = solUsd + enriched.reduce((s, t) => s + t.usdValue, 0)
+    // Add position values (mSOL staking, Kamino lending)
+    + (portfolio.positions || []).reduce((sum, pos) => {
+      if (pos.type === "liquid_stake" && pos.msolBalance) {
+        return sum + pos.msolBalance * (prices?.[MSOL_MINT] ?? solPrice);
+      }
+      if (pos.type === "lending") {
+        return sum + (pos.deposits || []).reduce((s, d) => s + (d.usdValue || 0), 0);
+      }
+      return sum;
+    }, 0);
 
   // Distribution bar items
   const barItems = [

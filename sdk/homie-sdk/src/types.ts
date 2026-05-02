@@ -57,6 +57,7 @@ export interface AgentResponse {
   strategyCards?: StrategyCard[];
   transaction?: TransactionPayload | TransactionBundle | null;
   portfolioData?: Portfolio | null;
+  multiply?: MultiplyCardData | null;
   /** Whether the server used the fallback (non-agent) path */
   fallback?: boolean;
   [key: string]: unknown;
@@ -79,6 +80,22 @@ export interface StrategyCard {
   amountUsd?: number;
   description?: string;
   [key: string]: unknown;
+}
+
+/** Data shape for the Kamino Multiply interactive card */
+export interface MultiplyCardData {
+  collateral: string;
+  collateralAmount: number;
+  collateralUsd: number;
+  entryPrice: number;
+  collateralApy: number;
+  debtApy: number;
+  suggestedLeverage: number;
+  maxLeverage: number;
+  liquidationLtv: number;
+  isCorrelated: boolean;
+  protocol: string;
+  market: string;
 }
 
 // ─── Transactions ────────────────────────────────────────────────────────────

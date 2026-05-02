@@ -122,7 +122,7 @@ export default function OnboardingScreen() {
           </View>
 
           <Text style={s.sub}>
-            Your Solana co-pilot. Create a wallet in seconds — no seed phrase, no complexity.
+            Your DeFi friend. Explains everything, executes anything — no seed phrase, no complexity.
           </Text>
 
           {/* ── Create Wallet (auto-generate) ── */}

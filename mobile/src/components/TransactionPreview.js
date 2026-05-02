@@ -66,7 +66,7 @@ function parseOutputToken(tx) {
 
 // ─── Bundle step row ─────────────────────────────────────────────────────────
 
-function BundleStep({ step, isCurrent, isDone }) {
+function BundleStep({ step, isCurrent, isDone, showPlainEnglish }) {
   const borderColor = isDone ? GREEN : isCurrent ? BLUE : GLASS_BDR;
   const numBg       = isDone ? "rgba(74,222,128,0.15)" : isCurrent ? "rgba(96,165,250,0.15)" : GLASS;
   const numColor    = isDone ? GREEN : isCurrent ? BLUE : TEXT_MUTED;
@@ -86,8 +86,16 @@ function BundleStep({ step, isCurrent, isDone }) {
               <Text style={b.estText}>EST</Text>
             </View>
           )}
+          {step.riskLevel === "high" && (
+            <View style={[b.estBadge, { backgroundColor: "rgba(248,113,113,0.12)", borderColor: "rgba(248,113,113,0.3)" }]}>
+              <Text style={[b.estText, { color: RED }]}>HIGH RISK</Text>
+            </View>
+          )}
         </View>
         <Text style={b.stepDesc} numberOfLines={2}>{step.description}</Text>
+        {showPlainEnglish && step.plainEnglish && (
+          <Text style={b.stepPlain}>{step.plainEnglish}</Text>
+        )}
         {step.estimated && (
           <Text style={b.stepNote}>{step.estimatedNote}</Text>
         )}
@@ -105,6 +113,7 @@ function BundleStep({ step, isCurrent, isDone }) {
 
 function BundlePreview({ bundle, currentStep, onConfirm, onCancel, signing }) {
   const step = bundle.steps[currentStep];
+  const narrativeLevel = bundle.narrativeLevel || "brief";
 
   return (
     <View style={s.card}>
@@ -133,14 +142,20 @@ function BundlePreview({ bundle, currentStep, onConfirm, onCancel, signing }) {
 
       {/* All steps */}
       <View style={{ gap: 8, marginBottom: 16 }}>
-        {bundle.steps.map((st, i) => (
-          <BundleStep
-            key={st.step}
-            step={st}
-            isCurrent={i === currentStep}
-            isDone={i < currentStep}
-          />
-        ))}
+        {bundle.steps.map((st, i) => {
+          const showPlainEnglish =
+            narrativeLevel === "full" ||
+            (narrativeLevel === "brief" && (st.riskLevel === "medium" || st.riskLevel === "high"));
+          return (
+            <BundleStep
+              key={st.step}
+              step={st}
+              isCurrent={i === currentStep}
+              isDone={i < currentStep}
+              showPlainEnglish={showPlainEnglish}
+            />
+          );
+        })}
       </View>
 
       {/* Current step details */}
@@ -337,6 +352,25 @@ function SingleTxPreview({ transaction, onConfirm, onCancel, signing, solPrice }
         </View>
       </View>
 
+      {transaction.riskEvaluation && transaction.riskEvaluation.tier !== "safe" && (
+        <View style={[
+          s.warnBox,
+          transaction.riskEvaluation.tier === "severe" && s.severeBox,
+        ]}>
+          <Text style={[
+            s.warnText,
+            transaction.riskEvaluation.tier === "severe" && { color: RED },
+          ]}>
+            {transaction.riskEvaluation.reasons[0]}
+          </Text>
+          {transaction.riskEvaluation.reasons.slice(1).map((r, i) => (
+            <Text key={i} style={[s.warnText, { marginTop: 4 }, transaction.riskEvaluation.tier === "severe" && { color: RED }]}>
+              {r}
+            </Text>
+          ))}
+        </View>
+      )}
+
       {transaction.why && (
         <View style={s.whyBox}>
           <Text style={s.whyText}>{transaction.why}</Text>
@@ -441,6 +475,11 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(251,191,36,0.25)",
     borderLeftWidth: 3, borderLeftColor: WARN,
   },
+  severeBox: {
+    backgroundColor: "rgba(248,113,113,0.07)",
+    borderColor: "rgba(248,113,113,0.25)",
+    borderLeftColor: RED,
+  },
   warnText: { color: WARN, fontSize: 13, lineHeight: 19 },
 
   // Actions
@@ -466,6 +505,7 @@ const b = StyleSheet.create({
   stepLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 },
   stepLabel: { color: TEXT_SEC, fontSize: 13, fontWeight: "700", flex: 1 },
   stepDesc: { color: TEXT_MUTED, fontSize: 12, lineHeight: 17 },
+  stepPlain: { color: "rgba(255,255,255,0.50)", fontSize: 12, lineHeight: 17, marginTop: 4, fontStyle: "italic" },
   stepNote: { color: WARN, fontSize: 11, marginTop: 3, lineHeight: 15 },
   estBadge: {
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,

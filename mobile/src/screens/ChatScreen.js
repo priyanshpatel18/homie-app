@@ -39,16 +39,22 @@ import PnLCard from "../components/PnLCard";
 import HistorySheet from "../components/HistorySheet";
 import PositionsSheet from "../components/PositionsSheet";
 import RiskSnapshotCard from "../components/RiskSnapshotCard";
-import OnboardingSheet, { shouldShowOnboarding } from "../components/OnboardingSheet";
+import ProjectionCard from "../components/ProjectionCard";
+import OnboardingSheet, { shouldShowOnboarding, getSavedTradeMode } from "../components/OnboardingSheet";
 import HomieLogoMain from "../components/HomieLogoMain";
 import HomieLogoThinking from "../components/HomieLogoThinking";
 import SandboxBanner from "../components/SandboxBanner";
 import SandboxDashboard from "../components/SandboxDashboard";
 import VoiceInputBubble from "../components/VoiceInputBubble";
+import ReceiveSheet from "../components/ReceiveSheet";
+import { InlineWalletQR } from "../components/ReceiveSheet";
+import MultiplyCard from "../components/MultiplyCard";
 import Markdown from "react-native-markdown-display";
 import { F } from "../theme/fonts";
 import Svg, { Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { askHomieStream, fetchPortfolio } from "../services/api";
+import { getAccessToken } from "@privy-io/expo";
+import { setAuthToken } from "../services/authStore";
 import { loadProfile } from "../services/userProfile";
 import { loadConfirmThreshold, saveConfirmThreshold } from "../services/confirmSettings";
 import RiskProfileSheet from "../components/RiskProfileSheet";
@@ -348,24 +354,45 @@ function HomieAvatar() {
 
   return (
     <Animated.View style={[styles.avatar, { transform: [{ scale: pulse }] }]}>
-      <HomieLogoMain size={26} />
+      <HomieLogoMain size={32} />
     </Animated.View>
   );
 }
 
-const QUICK_SUGGESTIONS = [
-  "What's my portfolio worth?",
-  "Rebalance my portfolio",
-  "Best yield for my balance",
-  "What if SOL drops 40%?",
-];
+// Wallet-state-aware suggested prompts — match the user's actual situation
+function getQuickSuggestions(solBalance) {
+  if (solBalance == null || solBalance <= 0.001) {
+    // Empty wallet: beginner-friendly, educational
+    return [
+      "How do I get started?",
+      "What is staking?",
+      "Show me what's possible with $100",
+    ];
+  }
+  // Has some balance: practical next-step prompts
+  return [
+    "What should I do with my SOL?",
+    "Explain yield farming in 30 seconds",
+    "What are the safest ways to earn?",
+    "Show me my portfolio",
+  ];
+}
 
 function buildWelcome(solBalance, walletAddress, walletStatus) {
   if (walletAddress && solBalance !== null) {
+    if (solBalance <= 0.001) {
+      return {
+        id: "welcome",
+        role: "homie",
+        text: "Hey \u2014 your wallet is empty right now. Before we do anything, want me to explain how DeFi earning works in 30 seconds? Or if you already know, tell me what you want to do.",
+        strategies: [],
+        showWalletQR: true,
+      };
+    }
     return {
       id: "welcome",
       role: "homie",
-      text: `Hello. I can see you're holding ${solBalance.toFixed(4)} SOL.\n\nTell me what you want — "safe yields", "max APY", or "check my portfolio" — and I'll find the best moves.`,
+      text: `Hey \u2014 you have ${solBalance.toFixed(4)} SOL. I can help you find the best yields, protect your portfolio, or just answer questions about what's happening on-chain. What would you like to do?`,
       strategies: [],
     };
   }
@@ -504,8 +531,10 @@ export default function ChatScreen({ route, navigation }) {
   const [showRiskSheet, setShowRiskSheet]         = useState(false);
   const [autopilotConfig, setAutopilotConfig]     = useState(null);
   const [autopilotVisible, setAutopilotVisible]   = useState(false);
+  const [tradeMode, setTradeMode]                    = useState("ask"); // "learn" | "ask" | "auto"
   const [chipsVisible, setChipsVisible]              = useState(true);
   const [voiceVisible, setVoiceVisible]              = useState(false);
+  const [receiveVisible, setReceiveVisible]            = useState(false);
   const yieldTimerRef = useRef(null);
   const healthCardShownRef  = useRef(false);
 
@@ -756,6 +785,11 @@ export default function ChatScreen({ route, navigation }) {
     if (!walletAddress) return;
     loadAutopilot(walletAddress).then(setAutopilotConfig).catch(() => {});
   }, [walletAddress]);
+
+  // ─── Load saved trade mode ───────────────────────────────────────────────────
+  useEffect(() => {
+    getSavedTradeMode().then(setTradeMode).catch(() => {});
+  }, []);
 
   // ─── Load confirm threshold ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1114,8 +1148,14 @@ export default function ChatScreen({ route, navigation }) {
       return "took too long to respond — network might be slow, try again.";
     if (msg.includes("500") || msg.includes("502") || msg.includes("503"))
       return "something broke on my end, not yours. give it a sec and try again.";
-    if (msg.includes("429"))
+    if (msg.includes("429") || msg.includes("rate limit"))
       return "I'm getting too many requests at once — wait a moment and send that again.";
+    if (msg.includes("jupiter"))
+      return "Jupiter swap failed — their API may be busy. try again in a moment.";
+    if (msg.includes("stream ended without"))
+      return "response didn't complete — network hiccup, try again.";
+    // Pass through server-provided messages that are already user-friendly
+    if (err?.message && err.message.length < 120) return err.message;
     return "something went sideways just now. try sending that again.";
   }
 
@@ -1168,9 +1208,13 @@ export default function ChatScreen({ route, navigation }) {
     ];
 
     try {
+      // Refresh token immediately before request — Privy may not have resolved on first authenticated event
+      const freshToken = await getAccessToken().catch(() => null);
+      if (freshToken) setAuthToken(freshToken);
+
       const data = await askHomieStream(
         text,
-        { walletAddress, solBalance: displayBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances: sandboxMode ? sandboxState?.balances : null },
+        { walletAddress, solBalance: displayBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances: sandboxMode ? sandboxState?.balances : null, tradeMode },
         newHistory,
         (status) => setAgentStatus(status),
         controller.signal,
@@ -1197,7 +1241,15 @@ export default function ChatScreen({ route, navigation }) {
         sentiment: data.sentiment || null,
         crossVenueStrategy: data.crossVenueStrategy || null,
         riskSnapshot: data.riskSnapshot || null,
+        projection: data.projection || null,
+        multiply: data.multiply || null,
         awaitingConfirmation: data.awaitingConfirmation === true,
+        // Auto-attach wallet QR when agent talks about receiving/funding and balance is low
+        showWalletQR: (() => {
+          if (displayBalance > 0.01) return false;
+          const t = (data.message || "").toLowerCase();
+          return /fund|deposit|receive|add sol|send sol|top.?up|transfer.*to your|wallet address/.test(t);
+        })(),
       };
       setMessages((prev) => [...prev, homieMsg]);
 
@@ -1402,10 +1454,19 @@ export default function ChatScreen({ route, navigation }) {
               .then((lamps) => setSolBalance(lamps / LAMPORTS_PER_SOL))
               .catch(() => {});
 
-            // Agent follow-up (non-blocking)
+            // Post-execution narration (non-blocking)
+            const postTxMeta = JSON.stringify({
+              type:           tx.type ?? "transaction",
+              protocol:       tx.protocol ?? "",
+              action:         tx.action ?? "",
+              inputToken:     tx.inputToken ?? "",
+              inputAmount:    tx.inputAmount ?? null,
+              outputToken:    tx.outputToken ?? "",
+              estimatedOutput: tx.estimatedOutput ?? "",
+            });
             askHomie(
-              `My transaction just confirmed on-chain: "${tx.action}". In 1–2 short sentences, what's a good next step?`,
-              { walletAddress, solBalance: displayBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances: sandboxMode ? sandboxState?.balances : null },
+              `__post_tx__:${postTxMeta}`,
+              { walletAddress, solBalance: displayBalance, network, userProfile, autopilotConfig, sandboxMode, sandboxVirtualBalances: sandboxMode ? sandboxState?.balances : null, tradeMode },
               [],
               null
             )
@@ -1414,10 +1475,11 @@ export default function ChatScreen({ route, navigation }) {
                 setMessages((prev) => [
                   ...prev,
                   {
-                    id: `followup_${Date.now()}`,
+                    id: `posttx_${Date.now()}`,
                     role: "homie",
                     text: followUp.message,
                     strategies: followUp.strategies || [],
+                    projection:  followUp.projection || null,
                   },
                 ]);
               })
@@ -1524,6 +1586,9 @@ export default function ChatScreen({ route, navigation }) {
             )}
           </GlowBubble>
           </Pressable>
+          {item.showWalletQR && walletAddress && (
+            <InlineWalletQR walletAddress={walletAddress} />
+          )}
           {item.portfolio && (
             <>
               <PortfolioCard portfolio={item.portfolio} />
@@ -1539,6 +1604,13 @@ export default function ChatScreen({ route, navigation }) {
               portfolio={portfolio ? { ...portfolio, solPrice: solPrice ?? 0 } : null}
               solBalance={displayBalance}
               onHedge={(from, to, amtUsd) => send(`hedge ${from} to ${to}, about $${amtUsd.toFixed(0)} worth`)}
+            />
+          )}
+          {item.projection && <ProjectionCard data={item.projection} />}
+          {item.multiply && (
+            <MultiplyCard
+              data={item.multiply}
+              onExecute={(lev, coll) => send(`Open Kamino Multiply at ${lev.toFixed(1)}x leverage on ${item.multiply.collateralAmount ?? ""} ${coll ?? item.multiply.collateral ?? "SOL"}`)}
             />
           )}
           {item.strategies?.length > 0 && (
@@ -1642,7 +1714,7 @@ export default function ChatScreen({ route, navigation }) {
         {/* ── Suggestion chips — collapsible ── */}
         {!loading && !sandboxMode && (() => {
           const isInitial = messages.length === 1;
-          const chips = isInitial ? QUICK_SUGGESTIONS : getContextualChips(messages);
+          const chips = isInitial ? getQuickSuggestions(solBalance) : getContextualChips(messages);
           if (!chips) return null;
           return (
             <View style={styles.suggestionsContainer}>
@@ -1698,7 +1770,7 @@ export default function ChatScreen({ route, navigation }) {
         {/* Positions button fallback — shown alone when no suggestion chips exist */}
         {!loading && !sandboxMode && walletAddress && (() => {
           const isInitial = messages.length === 1;
-          const chips = isInitial ? QUICK_SUGGESTIONS : getContextualChips(messages);
+          const chips = isInitial ? getQuickSuggestions(solBalance) : getContextualChips(messages);
           if (chips) return null; // chips section already renders the button
           return (
             <View style={styles.positionsFallbackRow}>
@@ -1810,6 +1882,7 @@ export default function ChatScreen({ route, navigation }) {
           visible={onboardingVisible}
           onClose={() => setOnboardingVisible(false)}
           onTryMessage={(msg) => { setOnboardingVisible(false); send(msg); }}
+          onModeSelected={(mode) => setTradeMode(mode)}
         />
 
         {/* Sandbox Dashboard */}
@@ -1943,7 +2016,7 @@ const styles = StyleSheet.create({
   // AI messages — glass card with stronger contrast
   homieRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingRight: 20 },
   avatar: {
-    width: 34, height: 34,
+    width: 40, height: 40,
     alignItems: "center", justifyContent: "center",
     marginTop: 2, flexShrink: 0,
   },
