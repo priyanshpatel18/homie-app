@@ -7,6 +7,7 @@ import {
   Wallet01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { usePrivy } from "@privy-io/react-auth";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -24,8 +25,31 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
+import { SidebarConnect } from "./sidebar-connect";
+
 interface ChatSidebarProps {
   onNewChat: () => void;
+}
+
+function RecentsEmptyState() {
+  const { ready, authenticated } = usePrivy();
+
+  if (!ready) return null;
+
+  if (!authenticated) {
+    return (
+      <p className="flex items-center gap-2 text-[13px] text-sidebar-foreground/45">
+        <HugeiconsIcon icon={Wallet01Icon} size={14} strokeWidth={1.5} />
+        <span>Connect wallet to save history</span>
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[13px] text-sidebar-foreground/45">
+      No conversations yet. Ask Homie anything to get started.
+    </p>
+  );
 }
 
 function SidebarBrand() {
@@ -92,20 +116,20 @@ function SidebarBrand() {
 export function ChatSidebar({ onNewChat }: ChatSidebarProps) {
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-3 py-3">
+      <SidebarHeader className="p-2 pt-4 group-data-[collapsible=icon]:items-center">
         <SidebarBrand />
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup className="px-2">
-          <SidebarMenu>
+        <SidebarGroup className="px-2 group-data-[collapsible=icon]:items-center">
+          <SidebarMenu className="group-data-[collapsible=icon]:items-center">
             <SidebarMenuItem>
               <SidebarMenuButton
                 onClick={onNewChat}
                 tooltip="New chat"
                 className="gap-3 text-sidebar-foreground/85 hover:bg-sidebar-accent"
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-sidebar-primary/15 text-sidebar-primary ring-1 ring-sidebar-primary/30">
+                <span className="grid size-7 shrink-0 place-items-center rounded-md bg-sidebar-primary/15 text-sidebar-primary ring-1 ring-sidebar-primary/30 group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:ring-0">
                   <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
                 </span>
                 <span>New chat</span>
@@ -119,29 +143,13 @@ export function ChatSidebar({ onNewChat }: ChatSidebarProps) {
             Recents
           </SidebarGroupLabel>
           <SidebarGroupContent className="px-2">
-            <p className="flex items-center gap-2 text-[13px] text-sidebar-foreground/45">
-              <HugeiconsIcon icon={Wallet01Icon} size={14} strokeWidth={1.5} />
-              <span>Connect wallet to save history</span>
-            </p>
+            <RecentsEmptyState />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="Connect Wallet"
-              className="gap-2.5 rounded-xl border border-sidebar-border bg-sidebar-accent/40 hover:border-sidebar-foreground/20 hover:bg-sidebar-accent"
-            >
-              <HugeiconsIcon icon={Wallet01Icon} size={16} strokeWidth={1.5} />
-              <span>Connect Wallet</span>
-              <span className="ml-auto font-mono text-[11px] text-sidebar-foreground/35 group-data-[collapsible=icon]:hidden">
-                ↕
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarFooter className="border-t border-sidebar-border p-2 group-data-[collapsible=icon]:items-center">
+        <SidebarConnect />
       </SidebarFooter>
     </Sidebar>
   );

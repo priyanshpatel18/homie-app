@@ -11,7 +11,7 @@ import { ChatView } from "./chat-view";
 
 const SIDEBAR_STYLE = {
   "--sidebar-width": "16.75rem",
-  "--sidebar-width-icon": "4rem",
+  "--sidebar-width-icon": "4.25rem",
 } as React.CSSProperties;
 
 export function ChatShell() {
