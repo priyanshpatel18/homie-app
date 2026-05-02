@@ -11,15 +11,42 @@ const RPC_URLS = {
   devnet:  "https://api.devnet.solana.com",
 };
 
-// Known token mints we care about
-const KNOWN_TOKENS = {
+// Known token mints — expanded to cover all common Solana tokens so
+// portfolio shows accurate balances (matching Backpack, Phantom, etc.)
+const KNOWN_TOKENS: Record<string, { symbol: string; name: string; decimals: number }> = {
+  // Liquid staking tokens
   mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So: { symbol: "mSOL", name: "Marinade staked SOL", decimals: 9 },
+  J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn: { symbol: "jitoSOL", name: "Jito Staked SOL", decimals: 9 },
+  "5oVNBeEEQvYi1cX3ir8Dx5n1P7pdxydbGF2X4TxVusJm": { symbol: "INF", name: "Infinity (Sanctum)", decimals: 9 },
+  bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1: { symbol: "bSOL", name: "BlazeStake SOL", decimals: 9 },
+
+  // Stablecoins
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { symbol: "USDC", name: "USD Coin", decimals: 6 },
   Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: { symbol: "USDT", name: "Tether USD", decimals: 6 },
+
+  // Wrapped assets
   "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": { symbol: "WETH", name: "Wrapped Ether", decimals: 8 },
   "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E": { symbol: "BTC",  name: "Wrapped Bitcoin", decimals: 6 },
+
+  // Major Solana ecosystem tokens
   DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263: { symbol: "BONK", name: "Bonk", decimals: 5 },
   JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN: { symbol: "JUP",  name: "Jupiter", decimals: 6 },
+  EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm: { symbol: "WIF",  name: "dogwifhat", decimals: 6 },
+  HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3: { symbol: "PYTH", name: "Pyth Network", decimals: 6 },
+  "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": { symbol: "RAY",  name: "Raydium", decimals: 6 },
+  orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE: { symbol: "ORCA", name: "Orca", decimals: 6 },
+  "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv": { symbol: "PENGU", name: "Pudgy Penguins", decimals: 6 },
+  jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL: { symbol: "JTO",  name: "Jito Governance", decimals: 9 },
+  rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof: { symbol: "RENDER", name: "Render Network", decimals: 8 },
+  HeLp6NuQkmYB4pYWo2zYs22mESHXPQYzXbB8n4V98jwC: { symbol: "AI16Z", name: "ai16z", decimals: 9 },
+  TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6: { symbol: "TNSR", name: "Tensor", decimals: 9 },
+  MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5: { symbol: "MEW",  name: "cat in a dogs world", decimals: 5 },
+  WENWENvqqNya429ubCdR81ZmD69brwQaaBYY6p3LCpk: { symbol: "WEN",  name: "Wen", decimals: 5 },
+
+  // Ethena / Ondo
+  DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT: { symbol: "USDe", name: "Ethena USDe", decimals: 18 },
+  Eh6XEPhSwoLv5wFApukmnaVSHQ6sAnoD9BmgmwQoN2sN: { symbol: "sUSDe", name: "Ethena Staked USDe", decimals: 18 },
+  A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6: { symbol: "USDY", name: "Ondo US Dollar Yield", decimals: 6 },
 };
 
 const MSOL_MINT = "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So";

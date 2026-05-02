@@ -148,15 +148,65 @@ const {
 // â"€â"€â"€ Pre-flight balance check â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Catches obvious insufficient-balance errors before building the tx.
 // Returns { ok: true } or { __preflight_failed: true, message: string }.
+// Now supports async — fetches on-chain SPL balances for non-SOL tokens.
+
+const { Connection: PfConnection, PublicKey: PfPublicKey, LAMPORTS_PER_SOL: PF_LAMPORTS } = require("@solana/web3.js");
+const { TOKEN_PROGRAM_ID: PF_TOKEN_PROGRAM } = require("@solana/spl-token");
 
 const MIN_FEE_SOL = 0.015; // keep this much SOL for network fees
 
-function preflightBalance(toolName, args, walletContext) {
+// Quick on-chain lookup: returns the user's balance of a specific SPL token.
+// Falls back to 0 on any error so the swap can still attempt (Jupiter will give a clearer error).
+async function fetchTokenBalance(walletAddress, tokenSymbol, network = "mainnet") {
+  try {
+    await loadTokenRegistry();
+    const tokenInfo = getToken(tokenSymbol);
+    if (!tokenInfo) return null; // unknown token — can't check
+
+    const rpcUrl = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+    const connection = new PfConnection(rpcUrl, "confirmed");
+    const owner = new PfPublicKey(walletAddress);
+    const mintPk = new PfPublicKey(tokenInfo.address);
+
+    const accounts = await connection.getParsedTokenAccountsByOwner(owner, {
+      programId: PF_TOKEN_PROGRAM,
+    });
+
+    for (const { account } of accounts.value) {
+      const parsed = account.data?.parsed?.info;
+      if (!parsed) continue;
+      if (parsed.mint === tokenInfo.address) {
+        return {
+          balance: parsed.tokenAmount?.uiAmount ?? 0,
+          symbol: tokenSymbol.toUpperCase(),
+          decimals: tokenInfo.decimals,
+        };
+      }
+    }
+    // Token account doesn't exist — user has 0
+    return { balance: 0, symbol: tokenSymbol.toUpperCase(), decimals: tokenInfo.decimals };
+  } catch (err) {
+    console.warn("[preflight] Token balance check failed:", err.message);
+    return null; // don't block — let Jupiter handle it
+  }
+}
+
+async function preflightBalance(toolName, args, walletContext) {
   if (walletContext.sandboxMode) return { ok: true }; // virtual balances managed client-side
   const sol = Number(walletContext.solBalance ?? 0);
+  const wallet = args.wallet || walletContext.walletAddress;
+  const network = walletContext.network || "mainnet";
 
   const failMsg = (need, have = sol, unit = "SOL") =>
-    `not enough ${unit} for this â€" you have ${have.toFixed(4)} ${unit} but need ${need.toFixed(4)} ${unit} (includes ~${MIN_FEE_SOL} SOL for fees). try a smaller amount.`;
+    `not enough ${unit} for this — you have ${have.toFixed(4)} ${unit} but need ${need.toFixed(4)} ${unit} (includes ~${MIN_FEE_SOL} SOL for fees). try a smaller amount.`;
+
+  // Always check SOL for tx fees
+  if (sol < MIN_FEE_SOL + 0.001 && toolName !== "get_portfolio") {
+    if (["prepare_stake_transaction", "prepare_lend_transaction", "prepare_swap_transaction",
+         "open_kamino_leverage", "jito_stake", "sanctum_stake_inf"].includes(toolName)) {
+      return { __preflight_failed: true, message: `your SOL balance is too low to cover transaction fees. add at least 0.02 SOL to your wallet first.` };
+    }
+  }
 
   if (toolName === "prepare_stake_transaction") {
     const need = Number(args.amount_sol ?? 0) + MIN_FEE_SOL;
@@ -164,16 +214,70 @@ function preflightBalance(toolName, args, walletContext) {
   }
 
   if (toolName === "prepare_swap_transaction") {
-    if ((args.input_token || "").toUpperCase() === "SOL") {
-      const need = Number(args.amount ?? 0) + MIN_FEE_SOL;
+    const inputToken = (args.input_token || "").toUpperCase();
+    const amount = Number(args.amount ?? 0);
+
+    if (inputToken === "SOL") {
+      const need = amount + MIN_FEE_SOL;
       if (sol < need) return { __preflight_failed: true, message: failMsg(need) };
+    } else if (wallet && amount > 0) {
+      // Non-SOL input token: check the user's SPL token balance on-chain
+      const tokenBal = await fetchTokenBalance(wallet, inputToken, network);
+      if (tokenBal && tokenBal.balance < amount) {
+        if (tokenBal.balance === 0) {
+          return {
+            __preflight_failed: true,
+            message: `you don't have any ${tokenBal.symbol} in your wallet. you need ${amount} ${tokenBal.symbol} to make this swap. consider swapping some SOL to ${tokenBal.symbol} first.`,
+          };
+        }
+        return {
+          __preflight_failed: true,
+          message: `not enough ${tokenBal.symbol} — you have ${tokenBal.balance.toFixed(4)} ${tokenBal.symbol} but need ${amount.toFixed(4)} ${tokenBal.symbol}. try a smaller amount or swap some SOL to ${tokenBal.symbol} first.`,
+        };
+      }
     }
   }
 
   if (toolName === "prepare_lend_transaction") {
-    if ((args.token || "").toUpperCase() === "SOL") {
-      const need = Number(args.amount ?? 0) + MIN_FEE_SOL;
+    const token = (args.token || "").toUpperCase();
+    const amount = Number(args.amount ?? 0);
+
+    if (token === "SOL") {
+      const need = amount + MIN_FEE_SOL;
       if (sol < need) return { __preflight_failed: true, message: failMsg(need) };
+    } else if (wallet && amount > 0) {
+      const tokenBal = await fetchTokenBalance(wallet, token, network);
+      if (tokenBal && tokenBal.balance < amount) {
+        if (tokenBal.balance === 0) {
+          return {
+            __preflight_failed: true,
+            message: `you don't have any ${tokenBal.symbol} in your wallet. you need ${amount} ${tokenBal.symbol} for this deposit.`,
+          };
+        }
+        return {
+          __preflight_failed: true,
+          message: `not enough ${tokenBal.symbol} — you have ${tokenBal.balance.toFixed(4)} but need ${amount.toFixed(4)} ${tokenBal.symbol}.`,
+        };
+      }
+    }
+  }
+
+  if (toolName === "prepare_unstake_transaction") {
+    const amount = Number(args.amount_msol ?? 0);
+    if (wallet && amount > 0) {
+      const tokenBal = await fetchTokenBalance(wallet, "mSOL", network);
+      if (tokenBal && tokenBal.balance < amount) {
+        if (tokenBal.balance === 0) {
+          return {
+            __preflight_failed: true,
+            message: `you don't have any mSOL in your wallet to unstake. you need to stake SOL first to get mSOL.`,
+          };
+        }
+        return {
+          __preflight_failed: true,
+          message: `not enough mSOL — you have ${tokenBal.balance.toFixed(4)} mSOL but want to unstake ${amount.toFixed(4)} mSOL. try ${tokenBal.balance.toFixed(4)} mSOL or less.`,
+        };
+      }
     }
   }
 
@@ -186,12 +290,6 @@ function preflightBalance(toolName, args, walletContext) {
     }
     // Only block if wallet can't even cover rent + fees
     if (sol < 0.05) return { __preflight_failed: true, message: `your SOL balance (${sol.toFixed(4)}) is too low to cover account creation rent (~0.0315 SOL, refunded on exit) plus transaction fees. Add a bit more SOL to your wallet first.` };
-  }
-
-  if (toolName === "prepare_stake_transaction" || toolName === "prepare_lend_transaction") {
-    if (sol < MIN_FEE_SOL + 0.001) {
-      return { __preflight_failed: true, message: `your SOL balance is too low to cover transaction fees. add at least 0.02 SOL to your wallet first.` };
-    }
   }
 
   return { ok: true };
@@ -1676,7 +1774,7 @@ async function executeTool(toolCall, walletContext) {
     }
 
     case "prepare_stake_transaction": {
-      const pre = preflightBalance(name, args, walletContext);
+      const pre = await preflightBalance(name, args, walletContext);
       if (pre.__preflight_failed) return pre;
       const result = await buildMarinadeStakeTx(args.amount_sol, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
@@ -1684,7 +1782,7 @@ async function executeTool(toolCall, walletContext) {
     }
 
     case "prepare_swap_transaction": {
-      const pre = preflightBalance(name, args, walletContext);
+      const pre = await preflightBalance(name, args, walletContext);
       if (pre.__preflight_failed) return pre;
       const result = await buildJupiterSwapTx(
         args.input_token,
@@ -1701,7 +1799,7 @@ async function executeTool(toolCall, walletContext) {
     }
 
     case "prepare_lend_transaction": {
-      const pre = preflightBalance(name, args, walletContext);
+      const pre = await preflightBalance(name, args, walletContext);
       if (pre.__preflight_failed) return pre;
       const result = await buildKaminoLendTx(args.token, args.amount, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
@@ -1712,6 +1810,8 @@ async function executeTool(toolCall, walletContext) {
     }
 
     case "prepare_unstake_transaction": {
+      const pre = await preflightBalance(name, args, walletContext);
+      if (pre.__preflight_failed) return pre;
       const result = await buildMarinadeUnstakeTx(args.amount_msol, args.wallet, network);
       if (result && !result.error) result.requiresApproval = true;
       return attachRisk(result, "Marinade Finance", "unstake", Number(args.amount_msol) * _cachedSolPrice);

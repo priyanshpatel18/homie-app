@@ -11,7 +11,7 @@ import { MessageSquare, TrendingUp, Shield, Zap, RefreshCw, ArrowRight, Sparkles
 import { F } from "../theme/fonts";
 import { IMPORTED_KEY_STORE, IMPORTED_ADDR_STORE, walletImportSignal } from "../components/LoginSheet";
 import { fetchPortfolio } from "../services/api";
-import { fetchPricesForMints } from "../services/priceService";
+import { fetchPricesForMints, calcPortfolioUsd } from "../services/priceService";
 import { loadProfile } from "../services/userProfile";
 import { getPortfolioPnL } from "../services/pnlService";
 import { loadAutopilot, AUTOPILOT_STRATEGIES } from "../services/autopilotService";
@@ -126,12 +126,11 @@ export default function HomeScreen({ navigation }) {
       const p = await fetchPortfolio(walletAddress);
       setPortfolio(p);
 
-      // Total USD value
-      const mints = [SOL_MINT, ...(p.tokens || []).map((t) => t.mint)];
-      const prices = await fetchPricesForMints(mints);
-      const solUsd = (p.solBalance ?? 0) * (prices[SOL_MINT] ?? 0);
-      const tokensUsd = (p.tokens || []).reduce((sum, t) => sum + (prices[t.mint] ?? 0) * t.balance, 0);
-      setTotalUsd(solUsd + tokensUsd);
+      // Total USD value — uses calcPortfolioUsd which includes SOL, SPL tokens,
+      // AND positions (mSOL staking, Kamino lending, etc.) so the total matches
+      // what wallets like Backpack show.
+      const usdResult = await calcPortfolioUsd(p);
+      if (usdResult) setTotalUsd(usdResult.totalUsd);
     } catch {}
 
     try {
