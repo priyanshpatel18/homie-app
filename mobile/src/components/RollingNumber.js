@@ -98,9 +98,10 @@ export default function RollingNumber({
   fontSize = 32,
   color = "#FFFFFF",
   fontWeight = "800",
+  fontFamily,
 }) {
   const digitH    = Math.ceil(fontSize * 1.18);
-  const charStyle = { fontSize, color, fontWeight, includeFontPadding: false };
+  const charStyle = { fontSize, color, fontWeight, fontFamily, includeFontPadding: false };
   const str       = String(value ?? "—");
 
   // Epoch increments on every value change → triggers pop-in replay
