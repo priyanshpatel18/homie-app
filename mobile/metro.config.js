@@ -2,9 +2,14 @@
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
-// @homie/sdk lives outside mobile/ — npm installs it as a junction (symlink).
-// Metro needs to know about the real path so it can watch & resolve it.
-const sdkPath = path.resolve(__dirname, '..', 'sdk', 'homie-sdk');
+// Shared @homie/* packages live outside mobile/ and are installed as symlinks.
+// Metro needs each real path in watchFolders so it can resolve through the link.
+const sharedRoots = [
+  path.resolve(__dirname, '..', 'sdk', 'homie-sdk'),
+  path.resolve(__dirname, '..', 'packages', 'sandbox'),
+  path.resolve(__dirname, '..', 'packages', 'lesson-content'),
+  path.resolve(__dirname, '..', 'packages', 'progress'),
+];
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
@@ -17,8 +22,8 @@ const config = getDefaultConfig(__dirname);
 config.resolver.unstable_enablePackageExports = true;
 config.resolver.unstable_conditionNames = ['browser', 'require', 'default'];
 
-// Let Metro follow the @homie/sdk symlink outside mobile/
-config.watchFolders = [sdkPath];
+// Let Metro follow the @homie/* symlinks pointing outside mobile/
+config.watchFolders = sharedRoots;
 config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, 'node_modules'),
 ];

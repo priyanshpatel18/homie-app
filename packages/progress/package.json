@@ -1,0 +1,17 @@
+{
+  "name": "@homie/progress",
+  "version": "0.1.0",
+  "description": "Lesson progress, XP, and streak engine with pluggable storage",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check-types": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "license": "MIT"
+}

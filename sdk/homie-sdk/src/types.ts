@@ -295,3 +295,65 @@ export interface AutopilotConfig {
   savedAt?: number;
   [key: string]: unknown;
 }
+
+// ─── Archetype + Lessons + Streak (Day 1+ home surfaces) ──────────────────────
+
+export type Archetype = "beginner" | "degen";
+export type ExplanationDepth = "minimal" | "standard" | "deep";
+
+export type LessonId = string;
+
+export interface LessonSummary {
+  id: LessonId;
+  title: string;
+  emoji: string;
+  xp: number;
+  unlocked: boolean;
+  completed: boolean;
+}
+
+export interface LessonProgress {
+  walletAddress: string;
+  completedLessons: LessonId[];
+  unlockedActions: string[];
+  totalXp: number;
+}
+
+export interface StreakState {
+  walletAddress: string;
+  currentStreak: number;
+  longestStreak: number;
+  lastCompletionDate: string | null;
+}
+
+export interface IdleSuggestion {
+  protocol: string;
+  action: string;
+  amountUsd: number;
+  rationale: string;
+  apy?: number;
+  estimatedTransaction?: TransactionPayload | null;
+}
+
+export interface HomeSnapshot {
+  walletAddress: string;
+  archetype: Archetype | null;
+  idleBalanceUsd: number;
+  openPositions: Position[];
+  topSuggestion: IdleSuggestion | null;
+  lessonProgress: LessonProgress | null;
+  streak: StreakState | null;
+  dailyStatStub: { ready: boolean } | null;
+}
+
+export interface CompleteLessonRequest {
+  walletAddress: string;
+  lessonId: LessonId;
+  unlockKey?: string;
+}
+
+export interface CompleteLessonResponse {
+  success: true;
+  progress: LessonProgress;
+  streak: StreakState;
+}

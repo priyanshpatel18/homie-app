@@ -82,12 +82,10 @@ import { calcPortfolioUsd, fetchPricesForMints } from "../services/priceService"
 import { loadPortfolioCache, savePortfolioCache } from "../services/portfolioCache";
 import {
   loadSandboxState, saveSandboxState, resetSandboxState, createFreshState,
-} from "../sandbox/sandboxState";
-import {
   simulateSwap, simulateStake, simulateUnstake, updateYield,
   simulateLend, simulateWithdrawLend, simulateLeverage, simulateLpOpen,
   calculatePnL, fetchTokenPricesUsd, parseTxAction,
-} from "../sandbox/sandboxEngine";
+} from "@homie/sandbox";
 
 const SOLANA_RPCS = {
   mainnet: "https://api.mainnet-beta.solana.com",

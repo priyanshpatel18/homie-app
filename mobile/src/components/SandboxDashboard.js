@@ -24,7 +24,7 @@ import {
   TrendingUp, TrendingDown, RotateCcw, X,
   ArrowRightLeft, Layers, RefreshCw, FlaskConical,
 } from "lucide-react-native";
-import { calculatePnL, fetchTokenPricesUsd, displaySym } from "../sandbox/sandboxEngine";
+import { calculatePnL, fetchTokenPricesUsd, displaySym } from "@homie/sandbox";
 
 const { width: SW } = Dimensions.get("window");
 
