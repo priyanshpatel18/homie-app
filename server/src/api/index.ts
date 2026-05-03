@@ -7,6 +7,7 @@ import { chartRouter } from "./chart.routes";
 import { ratesRouter } from "./rates.routes";
 import { sentimentRouter } from "./sentiment.routes";
 import { embedRouter } from "./embed.routes";
+import { homeRouter } from "./home.routes";
 import { chatLimiter, dataLimiter } from "../config/rateLimits";
 
 const pushRoutes = require("../push/pushRoutes");
@@ -19,6 +20,7 @@ export function mountApi(app: import("express").Express): void {
   app.use("/api/prices", dataLimiter);
   app.use("/api/chart", dataLimiter);
   app.use("/api/sentiment", dataLimiter);
+  app.use("/api/home", dataLimiter);
 
   app.use("/", healthRouter);
 
@@ -29,6 +31,7 @@ export function mountApi(app: import("express").Express): void {
   app.use("/api/rates", ratesRouter);
   app.use("/api/sentiment", sentimentRouter);
   app.use("/api/embed", embedRouter);
+  app.use("/api/home", homeRouter);
 
   app.use("/api", pushRoutes);
   app.use("/api/risk", riskRouter);
