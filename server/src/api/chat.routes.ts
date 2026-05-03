@@ -78,10 +78,12 @@ chatRouter.post("/", requireAuth, requireWalletOwnership, async (req: Request, r
         tradeMode,
         portfolio,
       });
-      res.json({
+      const fallbackResponse = {
         ...fallback,
         tip: fallback.tip || "Note: I used a simpler brain for this response.",
-      });
+      };
+      pushHistory(walletAddress, message ?? "", fallbackResponse);
+      res.json(fallbackResponse);
     } catch {
       res.status(500).json({
         error: "something went sideways on my end, try again in a sec.",
