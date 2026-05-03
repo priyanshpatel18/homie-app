@@ -25,7 +25,7 @@ function pickSolanaAddress(user: ReturnType<typeof usePrivy>["user"]): string | 
 }
 
 export type ConnectButtonProps = {
-  variant?: "primary" | "compact";
+  variant?: "primary" | "compact" | "link";
   className?: string;
 };
 
@@ -67,16 +67,26 @@ export function ConnectButton({
   }, [menuOpen]);
 
   const isCompact = variant === "compact";
+  const isLink = variant === "link";
 
   const baseClass = cn(
-    "inline-flex items-center justify-center gap-2.5 rounded-full font-medium tracking-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00F666] focus-visible:ring-offset-2 focus-visible:ring-offset-[#040405]",
-    isCompact
-      ? "h-9 px-4 text-[13px]"
-      : "h-11 px-5 text-[14px]",
+    isLink
+      ? "inline-flex items-center gap-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00F666] focus-visible:ring-offset-2 focus-visible:ring-offset-[#040405]"
+      : cn(
+          "inline-flex items-center justify-center gap-2.5 rounded-full font-medium tracking-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00F666] focus-visible:ring-offset-2 focus-visible:ring-offset-[#040405]",
+          isCompact
+            ? "h-9 px-4 text-[13px]"
+            : "h-11 px-5 text-[14px]"
+        ),
     className
   );
 
   if (!ready) {
+    if (isLink) {
+      return (
+        <span className={cn(baseClass, "text-white/35")}>Loading…</span>
+      );
+    }
     return (
       <button
         type="button"
@@ -93,6 +103,17 @@ export function ConnectButton({
   }
 
   if (!authenticated) {
+    if (isLink) {
+      return (
+        <button
+          type="button"
+          onClick={() => login()}
+          className={cn(baseClass, "hh-link text-white/75 hover:text-white")}
+        >
+          Connect
+        </button>
+      );
+    }
     return (
       <button
         type="button"
@@ -112,6 +133,60 @@ export function ConnectButton({
   const label = address
     ? shortAddress(address)
     : user?.email?.address ?? "Connected";
+
+  if (isLink) {
+    return (
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          className={cn(baseClass, "text-white/85 hover:text-white")}
+        >
+          <span
+            aria-hidden
+            className="inline-block size-1.5 rounded-full bg-[#00F666]"
+          />
+          <span className="font-mono text-[12px]">{label}</span>
+        </button>
+
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute right-0 top-[calc(100%+8px)] z-50 w-56 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0c]/95 p-1 shadow-xl backdrop-blur"
+          >
+            {address && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(address);
+                  setMenuOpen(false);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-white/80 hover:bg-white/[0.05]"
+              >
+                <HugeiconsIcon icon={Copy01Icon} size={14} strokeWidth={1.5} />
+                <span className="truncate">Copy address</span>
+              </button>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                logout();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-white/80 hover:bg-white/[0.05]"
+            >
+              <HugeiconsIcon icon={Logout01Icon} size={14} strokeWidth={1.5} />
+              <span>Disconnect</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div ref={menuRef} className="relative">

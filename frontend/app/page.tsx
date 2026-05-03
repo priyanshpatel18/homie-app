@@ -44,10 +44,10 @@ export default function Home() {
 
           <nav aria-label="Primary" className="flex items-center gap-6">
             <Link
-              href="/chat"
+              href="/app"
               className="hh-link text-sm text-white/75 hover:text-white"
             >
-              Ask
+              App
             </Link>
             <Link
               href="/blog"

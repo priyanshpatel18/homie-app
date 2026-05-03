@@ -1,4 +1,4 @@
-import { ChatShell } from "@/components/chat/chat-shell";
+import { redirect } from "next/navigation";
 
 export const metadata = {
   title: "Chat with Homie",
@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function ChatPage() {
-  return <ChatShell />;
+  redirect("/app?tab=chat");
 }
