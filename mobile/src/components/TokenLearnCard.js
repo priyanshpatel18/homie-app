@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { F } from "../theme/fonts";
-import { getExplainer } from "../lessons/tokenExplainers";
+import { getExplainer } from "@homie/lesson-content";
 import { API_URL } from "../services/api";
 
 const GREEN  = "#4ADE80";

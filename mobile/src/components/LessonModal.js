@@ -6,8 +6,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
 import { F } from "../theme/fonts";
-import { addXP, markLessonDone } from "../services/progressService";
-import { LESSONS } from "../lessons/lessonCatalog";
+import { addXP, markLessonDone } from "@homie/progress";
+import { LESSONS } from "@homie/lesson-content";
 import { API_URL } from "../services/api";
 
 // Module-level rate cache shared across modal opens

@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { F } from "../theme/fonts";
 import { fetchPortfolio } from "../services/api";
 import { calcPortfolioUsd } from "../services/priceService";
-import { getProgress, recordStreak } from "../services/progressService";
+import { getProgress, recordStreak } from "@homie/progress";
 import PortfolioCard from "../components/PortfolioCard";
 import LessonModal from "../components/LessonModal";
 import TokenLearnCard from "../components/TokenLearnCard";

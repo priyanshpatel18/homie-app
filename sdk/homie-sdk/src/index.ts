@@ -34,6 +34,12 @@ export {
   saveAutopilot,
 } from "./monitor";
 
+// Home
+export { fetchHomeSnapshot, fetchStreak } from "./home";
+
+// Lessons
+export { fetchLessonTree, completeLesson } from "./lessons";
+
 // Types — re-export everything so consumers can import from one place
 export type {
   // Config
@@ -81,4 +87,15 @@ export type {
   // Monitor — autopilot
   AutopilotConfig,
   AutopilotStrategy,
+  // Archetype + Lessons + Streak
+  Archetype,
+  ExplanationDepth,
+  LessonId,
+  LessonSummary,
+  LessonProgress,
+  StreakState,
+  IdleSuggestion,
+  HomeSnapshot,
+  CompleteLessonRequest,
+  CompleteLessonResponse,
 } from "./types";

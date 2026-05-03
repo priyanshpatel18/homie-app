@@ -5,6 +5,16 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { fontAssets } from "./src/theme/fonts";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { configureSandboxStorage, configureSandbox } from "@homie/sandbox";
+import { configureProgressStorage } from "@homie/progress";
+
+// ─── Configure shared packages ──────────────────────────────────────────────
+configureSandboxStorage(AsyncStorage);
+configureProgressStorage(AsyncStorage);
+configureSandbox({
+  backendUrl: process.env.EXPO_PUBLIC_API_URL || "http://10.0.2.2:4000",
+});
 
 SplashScreen.preventAutoHideAsync();
 import { NavigationContainer } from "@react-navigation/native";
