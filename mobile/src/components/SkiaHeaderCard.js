@@ -344,10 +344,10 @@ export default function SkiaHeaderCard({
             {balanceLoading ? (
               <ActivityIndicator size="small" color={GREEN} />
             ) : usdText != null ? (
-              <RollingNumber value={usdText} fontSize={30} color="#FFFFFF" fontWeight="800" />
+              <RollingNumber value={usdText} fontSize={30} color="#FFFFFF" fontWeight="800" fontFamily={F.headBold} />
             ) : solBalance !== null ? (
               <>
-                <RollingNumber value={solBalance.toFixed(4)} fontSize={30} color="#FFFFFF" fontWeight="800" />
+                <RollingNumber value={solBalance.toFixed(4)} fontSize={30} color="#FFFFFF" fontWeight="800" fontFamily={F.headBold} />
                 <Text style={[styles.unit, sandboxMode && styles.unitSandbox]}>
                   {sandboxMode ? " vSOL" : " SOL"}
                 </Text>

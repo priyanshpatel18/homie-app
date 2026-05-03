@@ -117,6 +117,9 @@ export async function fetchPricesForMints(mints) {
 /**
  * Compute total portfolio USD value from a fetchPortfolio() response.
  * Returns { totalUsd, solPrice } or null if prices unavailable.
+ *
+ * Supports both the new Helius DAS response (tokens have usdValue from DAS)
+ * and the old RPC response (tokens have no usdValue, need Jupiter price fetch).
  */
 export async function calcPortfolioUsd(portfolio) {
   if (!portfolio) return null;
@@ -126,8 +129,12 @@ export async function calcPortfolioUsd(portfolio) {
   for (const tok of portfolio.tokens || []) {
     if (tok.mint) mints.add(tok.mint);
   }
+  // Include position mints (all LSTs, not just mSOL)
   for (const pos of portfolio.positions || []) {
-    if (pos.type === "liquid_stake") mints.add(MSOL_MINT);
+    if (pos.type === "liquid_stake") {
+      if (pos.mint) mints.add(pos.mint);
+      else mints.add(MSOL_MINT); // backward compat
+    }
   }
 
   const prices = await fetchPricesForMints([...mints]);
@@ -138,17 +145,28 @@ export async function calcPortfolioUsd(portfolio) {
   const solPrice = prices[SOL_MINT] || 0;
   totalUsd += (portfolio.solBalance || 0) * solPrice;
 
-  // SPL tokens (USDC, BONK, JUP, etc.)
+  // SPL tokens — prefer server-side usdValue (from DAS), fall back to local price lookup
   for (const tok of portfolio.tokens || []) {
-    const price = prices[tok.mint] || 0;
-    totalUsd += (tok.balance || 0) * price;
+    if (tok.usdValue && tok.usdValue > 0) {
+      totalUsd += tok.usdValue;
+    } else {
+      const price = prices[tok.mint] || 0;
+      totalUsd += (tok.balance || 0) * price;
+    }
   }
 
-  // Marinade liquid staking position (mSOL)
+  // Positions: liquid staking (mSOL, jitoSOL, INF, bSOL, etc.)
   for (const pos of portfolio.positions || []) {
-    if (pos.type === "liquid_stake" && pos.msolBalance) {
-      const msolPrice = prices[MSOL_MINT] || solPrice;
-      totalUsd += pos.msolBalance * msolPrice;
+    if (pos.type === "liquid_stake") {
+      // Prefer server-side usdValue if available
+      if (pos.usdValue && pos.usdValue > 0) {
+        totalUsd += pos.usdValue;
+      } else {
+        const lstBal = pos.lstBalance ?? pos.msolBalance ?? 0;
+        const lstMint = pos.mint ?? MSOL_MINT;
+        const lstPrice = prices[lstMint] || solPrice;
+        totalUsd += lstBal * lstPrice;
+      }
     }
     // Kamino lending — API already returns USD value per deposit
     if (pos.type === "lending") {

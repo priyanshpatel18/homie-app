@@ -87,3 +87,37 @@ pricesRouter.get("/", async (req: PricesRequest, res: Response) => {
   console.warn("[prices] all price sources failed for mints:", mints);
   return res.status(502).json({ error: "Price data temporarily unavailable" });
 });
+
+// GET /api/prices/changes?mints=mint1,mint2
+// Returns { [mint]: change24hPct } for CoinGecko-known tokens only.
+// Unknown mints are omitted from the response.
+pricesRouter.get("/changes", async (req: Request, res: Response) => {
+  const { mints } = req.query;
+  if (!mints || typeof mints !== "string") {
+    return res.status(400).json({ error: "mints query param required" });
+  }
+
+  const mintList = mints.split(",").filter(Boolean);
+  const cgMints = mintList.filter((m) => CG_PRICE_IDS[m]);
+
+  if (cgMints.length === 0) return res.json({});
+
+  try {
+    const cgIds = cgMints.map((m) => CG_PRICE_IDS[m]);
+    const cgRes = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${cgIds.join(",")}&vs_currencies=usd&include_24hr_change=true`,
+      { signal: AbortSignal.timeout(6_000) }
+    );
+    if (!cgRes.ok) return res.json({});
+    const cgJson = (await cgRes.json()) as Record<string, { usd?: number; usd_24h_change?: number }>;
+    const changes: Record<string, number> = {};
+    for (const mint of cgMints) {
+      const id = CG_PRICE_IDS[mint];
+      const chg = cgJson[id]?.usd_24h_change;
+      if (chg != null && isFinite(chg)) changes[mint] = chg;
+    }
+    return res.json(changes);
+  } catch {
+    return res.json({});
+  }
+});

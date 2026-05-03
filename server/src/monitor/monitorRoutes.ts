@@ -26,6 +26,7 @@ const { registerPosition, closePosition, getPositions } = require("./positionSto
 const { setAutopilot, getAutopilot }                    = require("./autopilotStore");
 const { logActivity, updateActivity, getActivityLog }   = require("./activityLog");
 const { getSettings, saveSettings }                     = require("./agentSettings");
+const { createPlaybook, getPlaybooks, getPlaybook, cancelPlaybook, authorizePlaybook } = require("./playbookStore");
 const { requireAuth }                                   = require("../middleware/auth");
 const { requireWalletOwnership }                        = require("../middleware/walletOwnership");
 
@@ -157,6 +158,75 @@ router.get("/autopilot/:walletAddress", (req, res) => {
   try {
     const config = getAutopilot(req.params.walletAddress);
     res.json({ config });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Playbooks ────────────────────────────────────────────────────────────────
+
+// POST /api/monitor/playbooks — create + authorize a playbook
+router.post("/playbooks", (req, res) => {
+  try {
+    const {
+      walletAddress, name, type, conditions, actions,
+      maxAmountUsd, cooldownHours, durationDays,
+    } = req.body;
+
+    if (!walletAddress || !name || !type || !actions?.length) {
+      return res.status(400).json({ error: "walletAddress, name, type, and actions are required" });
+    }
+    if (typeof maxAmountUsd !== "number" || maxAmountUsd <= 0) {
+      return res.status(400).json({ error: "maxAmountUsd must be a positive number" });
+    }
+
+    const playbook = createPlaybook({
+      wallet: walletAddress,
+      name,
+      type,
+      conditions: conditions ?? [],
+      actions,
+      maxAmountUsd,
+      cooldownHours: cooldownHours ?? 24,
+      durationDays:  durationDays  ?? 30,
+    });
+
+    res.json({ success: true, playbook });
+  } catch (err) {
+    console.error("[Playbook] Create error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/monitor/playbooks/:walletAddress — list active playbooks
+router.get("/playbooks/:walletAddress", (req, res) => {
+  try {
+    const playbooks = getPlaybooks(req.params.walletAddress);
+    res.json({ count: playbooks.length, playbooks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/monitor/playbooks/:walletAddress/:id/authorize — user confirmed on mobile
+router.post("/playbooks/:walletAddress/:id/authorize", (req, res) => {
+  try {
+    const { walletAddress, id } = req.params;
+    const result = authorizePlaybook(walletAddress, id);
+    if (!result.success) return res.status(404).json(result);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/monitor/playbooks/:walletAddress/:id — cancel a playbook
+router.delete("/playbooks/:walletAddress/:id", (req, res) => {
+  try {
+    const { walletAddress, id } = req.params;
+    const result = cancelPlaybook(walletAddress, id);
+    if (!result.success) return res.status(404).json(result);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

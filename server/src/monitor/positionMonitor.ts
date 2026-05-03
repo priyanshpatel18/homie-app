@@ -11,13 +11,15 @@
  * Call startMonitor() once at server startup.
  */
 
-const { getAllActivePositions, canAlert, markAlerted } = require("./positionStore");
+const { getAllActivePositions, canAlert, markAlerted, closePosition } = require("./positionStore");
 const { getAllActive, getTargets }                     = require("./autopilotStore");
 const { sendPushNotification }                         = require("../push/pushService");
 const { fetchLiveRates }                               = require("../data/fetchRates");
 const { fetchAllPools, analyseAllPools }               = require("../engine/risk");
 const { buildFallbackPools }                           = require("../engine/risk/strategyEngine");
 const { fetchPortfolio }                               = require("../data/fetchPortfolio");
+const { getLimitOrders, cancelLimitOrderTx }           = require("../engine/jupiterTrigger");
+const { fetchKaminoObligations }                       = require("../data/fetchKaminoHealth");
 // sUSDe + USDY rates come from fetchLiveRates (susde_apy, usdy_apy fields)
 
 const INTERVAL_MS          = 15 * 60 * 1000; // 15 min — regular positions
@@ -33,8 +35,9 @@ const STAKING_BETTER_PCT   = 0.8;           // alert if another staking option i
 // ─── Single check cycle ───────────────────────────────────────────────────────
 
 async function runCheck() {
-  // Run autopilot drift checks in parallel with position alerts
+  // Run autopilot drift checks + stale trigger reconciliation in parallel
   runDriftChecks().catch((err) => console.warn("[Monitor] Drift loop error:", err.message));
+  runStaleTriggersCheck().catch((err) => console.warn("[Monitor] Stale trigger error:", err.message));
 
   const positions = getAllActivePositions();
   if (positions.length === 0) return;
@@ -380,6 +383,68 @@ async function runDriftChecks() {
       }
     } catch (err) {
       console.warn(`[Monitor] Drift check failed for ${walletAddress.slice(0, 8)}...:`, err.message);
+    }
+  }
+}
+
+// ─── Stale Trigger reconciliation ────────────────────────────────────────────
+// When a Kamino Multiply position is closed, its associated OCO stop-loss becomes
+// orphaned on Jupiter Trigger. This loop detects closed multiply positions and
+// cancels any remaining OCO orders for that wallet.
+
+const reconciledPositions = new Set(); // positionId → already reconciled after close
+
+async function runStaleTriggersCheck() {
+  const allPositions = getAllActivePositions();
+  const leveragePositions = allPositions.filter((p) => p.action === "leverage");
+  if (leveragePositions.length === 0) return;
+
+  const wallets = [...new Set(leveragePositions.map((p) => p.walletAddress))];
+
+  for (const wallet of wallets) {
+    try {
+      // Fetch live Kamino obligations to see which positions are still open
+      const obligations = await fetchKaminoObligations(wallet).catch(() => null);
+      if (!obligations) continue;
+
+      const openLevPositions = leveragePositions.filter((p) => p.walletAddress === wallet);
+
+      for (const pos of openLevPositions) {
+        if (reconciledPositions.has(pos.id)) continue;
+
+        // Check if this Kamino position is still active on-chain
+        const isStillOpen = obligations.some((o) =>
+          o.protocol?.toLowerCase().includes("kamino") && o.active
+        );
+
+        if (!isStillOpen) {
+          // Position closed — cancel any orphan limit/OCO orders for this wallet
+          reconciledPositions.add(pos.id);
+          closePosition(wallet, pos.id); // mark inactive in our DB too
+
+          const orders = await getLimitOrders(wallet).catch(() => ({ orders: [] }));
+          const orphans = (orders.orders || []).filter((o) => o.orderStatus === "active");
+
+          for (const order of orphans) {
+            try {
+              await cancelLimitOrderTx(order.account || order.orderAddress, wallet);
+              console.log(`[Monitor] Cancelled orphan Trigger order ${order.account} for closed multiply ${pos.id}`);
+            } catch (e) {
+              console.warn(`[Monitor] Failed to cancel orphan order ${order.account}:`, e.message);
+            }
+          }
+
+          if (orphans.length > 0) {
+            await sendPushNotification(wallet,
+              "Position Closed — Stop-Loss Removed",
+              `Your Kamino Multiply position was closed. ${orphans.length} orphan stop-loss order(s) cancelled.`,
+              { type: "position_closed", positionId: pos.id }
+            ).catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[Monitor] Stale trigger check failed for ${wallet.slice(0, 8)}...:`, err.message);
     }
   }
 }

@@ -73,6 +73,17 @@ db.exec(`
     ts         INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_spend_wallet_ts ON daily_spend(wallet, ts);
+
+  CREATE TABLE IF NOT EXISTS playbooks (
+    id            TEXT    PRIMARY KEY,
+    wallet        TEXT    NOT NULL,
+    config_json   TEXT    NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 1,
+    authorized_at INTEGER NOT NULL,
+    last_fired_at INTEGER,
+    created_at    INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_playbooks_wallet ON playbooks(wallet, active);
 `);
 
 export = db;

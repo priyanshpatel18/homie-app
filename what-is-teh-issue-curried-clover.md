@@ -1,332 +1,296 @@
-# Homie — 9-Day Sprint Plan (Duolingo Frame Applied)
+# Homie — Sprint Plan (Reconciled)
 
-## The Frame
-
-**The teaching is embedded in the action, not separate from it.** No lesson screens. No XP bars. Every execution comes with narration — in your numbers, in plain language. The more you use it, the smarter it gets about you. Three modes, one app:
-
-- **Learn** = Guide mode. Homie leads, explains what's about to happen in your actual numbers before executing.
-- **Ask** = Copilot mode. User leads. Homie executes + adds one sharp insight.
-- **Auto** = Autopilot mode. Homie manages. Reports what it did and why.
-
-The toggle already exists on web (`frontend/components/chat/composer.tsx`) and is sent to the server — but **the agent currently ignores it**. That's the core Day 2 unlock.
+> **Roles:** M = mobile (Bharath) · W = web (other dev) · B = both  
+> **Submit Day 8. ~17-day polish buffer after.**  
+> **This document reflects the actual codebase state as of reconciliation — not aspirations.**
 
 ---
 
-## What's Already Built (Don't Rebuild)
+## What Is Already Built
+
+Before any day reads as "PENDING", know what the codebase already has — so no one rebuilds it.
+
+### Server — largely done
 
 | Feature | File | Status |
 |---|---|---|
-| Live rates injected into every LLM call | `server/src/ai/agent.ts` → `buildLiveRatesCtx()` | ✅ Done |
-| Idle SOL alert injected into LLM | `server/src/ai/agent.ts` → `buildIdleCtx()` | ✅ Done |
-| tradeMode sent from web to server | `frontend/components/chat/chat-view.tsx:90` | ✅ Sent, ignored |
-| tradeMode toggle UI (Ask/Auto/Learn) | `frontend/components/chat/composer.tsx` | ✅ Exists |
-| tradeMode in WalletContext type | `sdk/homie-sdk/src/types.ts` | ✅ Typed |
-| Profile (risk/goal/experience) → LLM | `server/src/ai/agent.ts` → `profileToContext()` | ✅ Done |
-| Activity log (all confirmed actions) | `server/src/monitor/activityLog.ts` | ✅ Done |
-| Yield projection math (backward) | `mobile/src/services/pnlService.js` → `computeTradePnL()` | ✅ Exists |
-| Sandbox mode (paper trading) | `mobile/src/sandbox/sandboxEngine.js` | ✅ Full |
-| Autopilot (set strategy, drift alerts) | `server/src/monitor/autopilotStore.ts` | ✅ Done |
-| Position monitoring (8 alert types) | `server/src/monitor/positionMonitor.ts` | ✅ Done |
+| Chat memory (SQLite) | `server/src/db/conversationStore.ts` | ✅ Schema + CRUD exist |
+| Portfolio fetch (Helius DAS) | `server/src/data/fetchPortfolio.ts` | ✅ SPL + LST + Kamino positions |
+| Live APY rates | `server/src/data/fetchRates.ts` | ✅ Marinade, Jito, Sanctum, Kamino, Jupiter Lend |
+| Position monitor + alerts | `server/src/monitor/positionMonitor.ts` | ✅ 8 alert types |
+| Playbook store (CRUD) | `server/src/monitor/playbookStore.ts` | ✅ Typed declarations + auth ledger |
+| Activity log | `server/src/monitor/activityLog.ts` | ✅ Full |
+| Plan compiler | `server/src/engine/planCompiler.ts` | ✅ Multi-step with rollback metadata |
+| Kamino leverage builder | `server/src/engine/kaminoLeverageBuilder.ts` | ⚠️ Exists, marked "not recommended" — needs mainnet smoke |
+| Risk engine | `server/src/engine/risk/` | ✅ Scoring, adapters, strategy suggestions |
+| Expo push | `server/src/push/pushService.ts` | ✅ Token registration + alert management |
+| Autopilot | `server/src/monitor/autopilotStore.ts` | ✅ Strategy targets persisted |
+| **MISSING** | `/api/home/snapshot` | ❌ Not built |
+| **MISSING** | `/api/home/idle-suggestion` | ❌ Not built |
+| **MISSING** | `/api/home/daily-stats` | ❌ Not built |
+| **MISSING** | `daily_stats` DB table | ❌ Not built |
+
+### Web — foundation only
+
+| Feature | Status |
+|---|---|
+| Marketing landing (`/`) | ✅ Complete |
+| Chat UI (`/chat`) — ChatShell + ChatView + Composer + StrategyCard | ✅ Full, streaming, mode toggle |
+| Blog scaffold | ✅ Structure done, content system TBD |
+| `/app` four-tab shell | ❌ Does not exist |
+| Practice toggle | ❌ Does not exist |
+| Home tab (positions, stats, suggestions) | ❌ Does not exist |
+| Positions tab + SL/TP cards | ❌ Does not exist |
+| Automations tab (playbooks) | ❌ Does not exist |
+| Onboarding questions (goal + verbosity) | ❌ Does not exist |
+
+### Mobile — further along than the Notion assumed
+
+| Feature | Status |
+|---|---|
+| Auth (Privy OAuth + wallet import + passcode) | ✅ Complete |
+| HomeScreen (balance, portfolio USD, stat pills, mode picker, autopilot) | ✅ Works, but not yet a four-tab shell |
+| ChatScreen — full DeFi chat + streaming + strategy cards + transaction signing | ✅ Complete |
+| Sandbox / Practice mode | ✅ `sandboxEngine.js` + `SandboxBanner` + `SandboxDashboard` all exist |
+| PositionsSheet | ✅ Lists open positions |
+| PlaybookCard | ✅ Display component (creation modal pending) |
+| MultiplyCard | ✅ Display component (mainnet wire-up pending) |
+| AutopilotSheet | ✅ Full — allocation strategy config |
+| TransactionPreview + SlideToConfirm | ✅ Full |
+| Expo push notification setup | ✅ Token registration + handlers |
+| **Learn mode (Duolingo)** | ✅ Built: `LearnScreen`, `LessonModal`, `TokenLearnCard`, `lessonCatalog`, `tokenExplainers`, `progressService` |
+| Four-tab shell (Home, Positions, Automations, Chat) | ❌ HomeScreen is not yet restructured to tabs |
+| Practice toggle in header (global, not per-screen) | ❌ Sandbox exists but not wired as a persistent header toggle |
+| Per-position SL/TP card | ❌ Not built |
+| Daily Stats card | ❌ Not built |
+| Playbook creation modal ("contract" UI) | ❌ Not built |
 
 ---
 
-## Day 1 — Foundation
+## Note on Learn Mode (Mobile)
 
-### 1A. Conversation Memory Persistence
+Days 1–3 of the previous sprint plan produced a Duolingo-style **Learn mode** (lesson catalog, step runner, token education cards, XP/streak persistence). This does **not** map to "Practice mode" in the new plan — they're different things:
 
-**Problem:** Conversation history lives in an in-memory Map in `server/src/index.ts` — dies on restart.
+- **Learn mode** = passive education, lesson cards, XP, Duolingo feel
+- **Practice mode** = same UI as live, sandbox wallet, same agent, no real signing
 
-**Files:**
-- `server/src/db/conversationStore.ts` — already exists with `getHistory` / `pushHistory` using SQLite `conversations` table
-- `server/src/api/chat.routes.ts` — already calls `getHistory(walletAddress)` and `pushHistory()`
-- **The table and functions exist. Verify they're actually being called on both GET (history load) and POST (save after response).** The bug is likely that client-side history takes priority and never falls back to DB. Fix: always persist to DB regardless of whether client sent history.
-
-**Change in `chat.routes.ts`:**
-```typescript
-// After response, always save to DB
-pushHistory(walletAddress, message, response);  // already there — verify this runs
-```
-
-### 1B. Two Onboarding Questions
-
-**What:** When user first opens Chat, after the current 4-step carousel (`OnboardingSheet.js`), ask 2 questions that seed the tradeMode default:
-1. "What's your DeFi goal?" → passive income / grow my bag / just exploring
-2. "How much do you want explained?" → "Show me everything (Learn)" / "Just the key insight (Ask)" / "Execute and report (Auto)"
-
-**File:** `mobile/src/components/OnboardingSheet.js` — add steps 5 and 6 to the existing `STEPS` array. Map Q2 answer to initial `tradeMode` state in ChatScreen.
-
-**Note:** `RiskProfileSheet.js` already collects risk + goal + experience on first Chat entry. Either combine into one flow or make OnboardingSheet Q1 feed into RiskProfile so they share state.
-
-### 1C. Virtual-Wallet Projector (Server)
-
-**What:** Given a wallet's current balances and a strategy (e.g. "stake SOL on Marinade"), project portfolio value over 30/60/90 days under three scenarios.
-
-**Reuse:** `mobile/src/services/pnlService.js` has the yield math (`entryUsd * apy * days/365`). Port this logic server-side.
-
-**New file:** `server/src/data/projectPortfolio.ts`
-
-```typescript
-export function projectYield(params: {
-  amountUsd: number;
-  apy: number;         // from live rates (already fetched)
-  solPriceUsd: number; // from rates.sol_price_usd
-  days: 30 | 60 | 90;
-  scenarios: { bull: number; base: number; bear: number }; // SOL price multipliers
-}): { bull: ProjectionResult; base: ProjectionResult; bear: ProjectionResult }
-```
-
-**Agent tool:** Add `project_portfolio` tool to TOOLS array in `agent.ts`. The agent calls it when user asks "what would I earn if I staked X for 30 days" or when presenting a strategy in Learn mode.
-
-**Response field:** Add `"projection": null | { days, scenarios }` to agent JSON response. Frontend renders a simple bar chart.
+Learn mode work is complete and kept. It sits behind the current `ModePickerSheet` (Learn vs Pro choice on first launch). In the new four-tab architecture, the recommended integration is: **Learn becomes a fifth optional tab on mobile** once the four core tabs are live. It does not block any of Days 1–8.
 
 ---
 
-## Day 2 — Risk Gating + Learn Mode (The Core Mode Unlock)
+## Day-by-Day Plan (Updated)
 
-### 2A. Wire tradeMode into Agent
+### Day 1 — Four-Tab Shell
 
-**The gap:** `tradeMode` arrives in `walletContext` but `agentChat` / `agentChatStream` never use it.
+**Goal:** Kill chat-first. Both surfaces get Home / Positions / Automations / Chat tabs. Server persists memory.
 
-**File:** `server/src/ai/agent.ts`
+**Web (W):**
+- Create `/app` route with four-tab layout replacing the current `/chat`-only entry
+- Practice toggle in top bar (toggle state in context, no server call yet — wires in Day 3)
+- Home tab renders four slots (idle balance, positions, daily stats, suggestion) — all empty/loading skeletons for now
+- Redirect `/chat` → `/app?tab=chat`
 
-Add `buildModeCtx(tradeMode)` alongside existing context builders:
+**Mobile (M):**
+- Restructure `HomeScreen.js` into a bottom tab navigator: **Home | Positions | Automations | Chat**
+- Move existing `ChatScreen` content under the Chat tab (no functional change to chat itself)
+- Move existing `PositionsSheet` into the Positions tab (render inline, not as a bottom sheet)
+- Practice toggle in the header (reads from AsyncStorage, no server call yet)
+- Keep `LearnScreen` behind the existing ModePickerSheet — it's not part of the four tabs yet
 
-```typescript
-function buildModeCtx(tradeMode: string | undefined): string {
-  if (tradeMode === "learn") {
-    return `\n\nMODE: LEARN — User wants maximum context. Before every execution: 1 sentence using their exact numbers (amount, output, APY, time). Underline jargon terms inline as [term: plain explanation]. After execution: narrate what changed in their wallet + what they now earn per day/month. Keep each part to 1-2 sentences — explanations are brief, not lectures.`;
-  }
-  if (tradeMode === "auto") {
-    return `\n\nMODE: AUTO — User is experienced. Execute concisely. One-line reports only. Proactively flag drift, better rates, risks — without waiting to be asked.`;
-  }
-  // "ask" is default
-  return `\n\nMODE: ASK — User leads. Execute efficiently. Add ONE sharp insight where it genuinely helps: a better rate, a hidden risk, a smarter comparison. Skip explanations of basics.`;
-}
-```
-
-Inject in both `agentChat` and `agentChatStream` (alongside the rates and idle ctx already there):
-
-```typescript
-const modeCtx = buildModeCtx(tradeMode);
-// Add ${modeCtx} to walletInfo string
-```
-
-### 2B. Post-Execution Narration (Learn Mode Key Feature)
-
-**What:** After every confirmed transaction, Homie automatically narrates what just happened in real numbers.
-
-**Trigger:** Mobile sends `__post_tx__:{...metadata}` as the next chat message after tx confirmation.
-
-**In agent.ts SYSTEM_PROMPT**, add:
-```
-POST-EXECUTION NARRATION:
-When message starts with "__post_tx__:", parse the JSON metadata.
-Generate 1-2 sentences: what changed in wallet (X SOL → X mSOL), what they now earn ($/month at current rates and SOL price). In Learn mode: add one grounding sentence ("you're now earning automatically — nothing to do"). Never mention "__post_tx__" in your response.
-```
-
-**Mobile change:** In `ChatScreen.js`, after tx confirmation callback fires, send `__post_tx__:{type,protocol,amount,token,outputToken,estimatedOutput}`.
-
-### 2C. Risk Gating — Three Tiers
-
-**New file:** `server/src/data/riskGate.ts`
-
-```typescript
-export type RiskTier = "safe" | "warn" | "severe";
-
-export function evaluateRisk(protocol: string, action: string, amountUsd: number): {
-  tier: RiskTier;
-  reasons: string[];
-}
-```
-
-Logic:
-- **safe:** established protocols (Marinade, Kamino main market, Jupiter Lend), amount < $1000
-- **warn:** newer protocols, LP positions (IL risk), amount $1000-$5000
-- **severe:** leverage positions, unverified mints, amount > $5000 or concentrated bet
-
-**Agent integration:** Before calling `prepare_*_transaction` tools, agent receives risk tier from `evaluateRisk`. In Learn mode: always show risk reasons. In Ask mode: show for warn/severe. In Auto mode: show only for severe.
-
-**Response field:** Add `"riskCard": null | { tier, reasons }` to agent JSON response. Frontend renders inline alongside strategy card.
+**Server (B):**
+- Verify `pushHistory` fires on every chat turn in `chat.routes.ts` — check both POST and GET paths
+- Build `GET /api/home/snapshot` → returns `{ idleBalanceUsd, positionCount, dailyStatStub: null, topSuggestionStub: null }`
 
 ---
 
-## Day 3 ★ — Multi-Step Plans + Multiply UX (PAIR)
+### Day 2 — Persona Onboarding + Idle Nudge
 
-### 3A. Plan Compiler
+**Goal:** First open captures persona. Home shows one ranked idle suggestion in plain English.
 
-**New file:** `server/src/engine/planCompiler.ts`
+**Web (W):**
+- Onboarding sheet on `/app` first visit (two questions: goal → passive income / grow / explore; verbosity → explain everything / key insight / execute and report). Store in localStorage + POST to server
+- Idle balance card on Home tab: shows unstaked SOL USD value + one suggestion with one-line rationale
 
-Takes a multi-step strategy (e.g. unstake → swap → lend) and returns:
-```typescript
-interface CompiledPlan {
-  steps: PlanStep[];
-  totalSteps: number;
-  rollbackInstructions: string[];
-  estimatedTotalUsd: number;
-}
-interface PlanStep {
-  index: number;
-  label: string;
-  protocol: string;
-  serializedTx: string;
-  estimatedOutput: string;
-  solscanLink?: string;  // populated after confirmation
-}
+**Mobile (M):**
+- Merge `OnboardingSheet.js` + `RiskProfileSheet.js` into a single 4-step flow: goal → verbosity → risk → done. Write answers to server + AsyncStorage
+- Idle balance card on Home tab (the same component, styled for mobile)
+- Wire idle suggestion from `GET /api/home/idle-suggestion` to the suggestion slot
+
+**Server (B):**
+- Persona stored per wallet in a new `personas` table (goal, verbosity, risk — mirrors existing `agent_settings` shape)
+- `GET /api/home/idle-suggestion` — reads wallet's idle SOL from portfolio, reads persona, ranks: Marinade → Kamino lend → Jupiter Lend by risk level. Returns `{ protocol, action, rationale, estimatedApyPct, preparedTxStub: null }`
+
+---
+
+### Day 3 — Practice Wallet End-to-End
+
+**Goal:** Practice toggle routes everything through the sandbox with the same UI. Zero branching.
+
+**Web (W):**
+- Practice toggle wires: when `practice=true`, all `/api/chat` calls include `{ sandbox: true }` in wallet context
+- Visible "PRACTICE" banner on Home tab when active
+- Strategy card action buttons disabled-but-visible when no real signing
+
+**Mobile (M):**
+- Wire the Practice toggle in the header to `sandboxEngine.js` — all `askHomie` calls include `{ sandbox: true }` when toggled
+- `SandboxBanner` already exists — mount it conditionally at the top of the Home and Chat tabs
+- Positions tab shows sandbox positions (separate list) when practice is active
+- `SandboxDashboard` already exists — surface it from the Home tab when practice is active
+
+**Server (B):**
+- When `walletContext.sandbox === true`, all tool calls (`fetchPortfolio`, `prepare_*_transaction`) read/write to a per-wallet sandbox state table instead of executing on-chain
+- Sandbox state table: `wallet, token, balance, positions_json` — upserted on every sandbox trade
+- Response shape identical to live — agent and UI need zero code branches
+
+---
+
+### Day 4 — Live Positions + Jupiter Trigger SL/TP
+
+**Goal:** Positions tab shows live positions. Each position can have a stop-loss and take-profit attached.
+
+**Web (W):**
+- Positions tab: list cards per open position (protocol, pair, entry price, current P&L, health if Kamino)
+- Per-position SL/TP card: price input for stop-loss, price input for take-profit, "Attach" button
+- Web Push permission flow (browser `Notification.requestPermission`) — store subscription in server
+- Push deep-link opens the position card when threshold is crossed
+
+**Mobile (M):**
+- Positions tab: same list cards — `PositionsSheet` content migrated inline
+- Per-position SL/TP card — new component `PositionSlTpCard.js`
+- Expo push deep-link already wired (`notifications.js`) — add position deep-link handler
+
+**Server (B):**
+- `prepare_trigger_order` tool in agent.ts: calls Jupiter Trigger API to create a SL or TP order against an existing position mint
+- `positionMonitor.ts` — when a position closes (Kamino repay, unstake, etc.), cancel any orphan Trigger orders for that position
+- Push on threshold cross: 1-minute debounce, include position ID in payload for deep-link
+
+---
+
+### Day 5 — Kamino Multiply + Multi-Step Plans *(PAIR)*
+
+**Goal:** Headline demo strategy. Multiply card with live liquidation math. Multi-step plan previewed and cancellable.
+
+**Web (W):**
+- Multiply card: collateral picker (SOL / jitoSOL / mSOL), leverage slider 1.5x–3x, live liquidation distance, worst-case loss at −10/−20/−30% SOL
+- Multi-step plan card: numbered steps, per-step preview (amount, output, fee), per-step receipt after confirmation, "Cancel plan" button
+
+**Mobile (M):**
+- Same Multiply card — `MultiplyCard.js` already exists as a display component, wire it to the agent's `open_kamino_leverage` tool
+- Same multi-step plan card — `planCompiler.ts` already exists on server, build the mobile step-by-step UI
+
+**Server (B):**
+- `kaminoLeverageBuilder.ts`: smoke on mainnet, fix anything blocking — it's marked "not recommended" but needs to work
+- `planCompiler.ts` already exists: verify rollback metadata is returned per step
+- Re-quote Jupiter Ultra orders if the signed payload TTL is under 30 seconds
+- Pair deliverable: open a 2x jitoSOL Multiply on mainnet from both surfaces. Record clip.
+
+---
+
+### Day 6 — Daily Stats Card
+
+**Goal:** Home tab "what happened today" card. Yesterday in plain English.
+
+**Web (W):**
+- Daily Stats card on Home: PnL today, best move, worst move, idle drag USD, suggested next move
+- One-line timestamp ("as of 8pm")
+
+**Mobile (M):**
+- Same card on Home tab
+- One Expo push at the user's local 8pm: "Your Homie daily report is ready" → deep-link to Home tab
+
+**Server (B):**
+- Add `daily_stats` table to `database.ts`: `wallet, date, pnl_usd, best_move_json, worst_move_json, idle_drag_usd, suggestion_json`
+- `GET /api/home/daily-stats/:wallet` aggregates today's `activity_log`, position deltas, idle balance, Kamino health changes. On first call of the day, compute and cache to `daily_stats`; subsequent calls return cached row
+- Nightly job at 20:00 wallet-local: iterate all wallets with positions, compute stats, push Expo notification
+
+---
+
+### Day 7 — Playbooks *(PAIR)*
+
+**Goal:** Pre-authorised, scoped automations. Two templates wired end-to-end.
+
+**Web (W):**
+- Playbook proposal modal: reads like a contract — asset, max size, condition, cooldown, expiry. Plain English, no jargon
+- Automations tab on `/app`: list active playbooks with pause/cancel. Each card: template name, scope summary, last-fired, next eligible
+- `/playbooks` explainer page: scoped, time-bound, auditable, revocable
+
+**Mobile (M):**
+- Same playbook proposal modal (bottom sheet) — `PlaybookCard.js` already exists for display, build the create/edit sheet
+- Same Automations tab: active playbooks list with pause/cancel
+
+**Server (B):**
+- `playbookStore.ts` already has CRUD + conditions/actions/scope/cooldown/expiry — verify fire engine respects all fields
+- Move-to-safety template: triggers on Kamino health < 1.15 → repay borrow → swap collateral to USDC
+- DCA template: wires to Jupiter Recurring API — `POST /api/v2/recurring/orders`
+- On fire: write receipt (tx signature, Solscan link) to activity_log, push Expo + Web Push
+- Pair deliverable: authorise both templates from both surfaces. Force-fire move-to-safety on forked mainnet at −25% SOL. Record clip.
+
+---
+
+### Day 8 — Polish + Demo + Submission *(PAIR)*
+
+**Web (W):**
+- Final landing pass
+- `/risk` and `/automations` explainer pages live
+- Demo video embedded on landing
+- DX report at `/dx-report` (2,500+ words including 600-word rebuild essay + AI stack section)
+- Frontier Kamino integration page
+
+**Mobile (M):**
+- TestFlight build link + APK link live
+- Final mainnet smoke: Practice toggle → persona onboarding → idle suggestion → Multiply open → SL attach → Daily Stats → playbook fire
+- Learn mode regression check (still launches, lessons complete, XP saves)
+
+**Server (B):**
+- Backoff + jitter on Jupiter 429s (`fetchRates.ts` and transaction builders)
+- Refresh Kamino reserves before every multiply close
+- Audit log export endpoint with request IDs
+- Feature flags for every shipped flow
+
+**Submission:**
+- Frontier on Superteam Earn under Kamino track (web URL = live app)
+- Jupiter Developer Platform with DX report
+
+---
+
+## Cut List (Drop in this order if behind)
+
+1. Day 6 Daily Stats push notification — in-app card only
+2. Day 4 Web Push — in-app banner instead
+3. Founder LinkedIn posts / second blog of any day
+4. Day 7 DCA template — move-to-safety only
+5. Day 5 multi-step plan rollback metadata — best-effort retry only
+6. Learn mode as a tab — stays behind ModePickerSheet, not promoted to fourth tab
+
+**Never cut:** Day 1 four-tab shell, Day 2 persona + idle nudge, Day 3 Practice Wallet, Day 4 SL/TP, Day 5 Multiply, Day 7 playbooks, Day 8 demo, DX report.
+
+---
+
+## Architecture After Day 1
+
+```
+App root (web: /app, mobile: HomeScreen)
+│
+├── Tab: Home        ← idle balance card, positions mini-list, daily stats, suggestions
+├── Tab: Positions   ← live position cards + per-position SL/TP
+├── Tab: Automations ← active playbooks + fire history
+└── Tab: Chat        ← existing ChatScreen / ChatShell (unchanged)
+│
+Practice toggle (header) ──► sandbox=true in walletContext ──► server routes to sandbox state
 ```
 
-**Agent SYSTEM_PROMPT addition:** When user requests a multi-step strategy, the agent builds the full plan first (calls tools in sequence), then returns it as `transaction_bundle`. In Learn mode: each step includes a plain-English "what this does" line.
-
-### 3B. Kamino Multiply Card
-
-**New agent tool:** `open_kamino_leverage` already exists. Add a dedicated Multiply card render on mobile.
-
-**Mobile:** `mobile/src/components/MultiplyCard.js` (new) — collateral picker, leverage slider 1.5x–3x, live liquidation price, worst-case loss at −10/−20/−30% SOL. Rendered when agent returns `transaction.type === "kamino_multiply"`.
-
----
-
-## Day 4 — Playbook System
-
-### 4A. Typed Playbook Declarations
-
-**New file:** `server/src/monitor/playbookStore.ts`
-
-```typescript
-interface Playbook {
-  id: string;
-  wallet: string;
-  type: "move_to_safety" | "dca" | "compound";
-  conditions: PlaybookCondition[];   // e.g. { metric: "health_factor", op: "<", value: 1.15 }
-  actions: PlaybookAction[];         // typed action declarations
-  maxAmountUsd: number;
-  cooldownHours: number;
-  expiresAt: number;
-  authorizedAt: number;
-}
+Mobile additionally:
+```
+ModePickerSheet (first launch)
+├── "Learn mode" → LearnScreen (Duolingo lessons — already built)
+└── "Pro mode"  → four-tab shell above
 ```
 
-**DB table:** `playbooks` (wallet, id, config_json, active, authorized_at, last_fired_at)
-
-### 4B. Authorization Ledger
-
-Every playbook authorization stored with: timestamp, scope (max amount, expiry), wallet signature (or explicit confirm tap). No blank checks — scope is declared before authorization.
-
-**Endpoints in `monitorRoutes.ts`:**
-```
-POST /api/monitor/playbooks          — create + authorize
-GET  /api/monitor/playbooks/:wallet  — list active
-DELETE /api/monitor/playbooks/:wallet/:id — cancel
-```
-
-### 4C. DCA Starter Template
-
-Wire Jupiter Recurring API into a playbook template. The agent proposes a playbook (not just a one-shot DCA order) when user says "invest $X every week."
-
 ---
 
-## Day 5 ★ — Headline Atomic Plan (PAIR)
+## Vision Check (Before Any Push)
 
-**The demo centerpiece:** Kamino Multiply + Jupiter Trigger stop-loss + move-to-safety playbook — one consent, three legs.
-
-### Wiring:
-
-1. `open_kamino_leverage` → builds multiply tx
-2. After multiply confirmed, agent auto-proposes: "Want me to attach a stop-loss that automatically protects this position?"
-3. User says yes → `create_oco_order` for the stop-loss leg
-4. Agent also registers a `move_to_safety` playbook in the background (repay Kamino + swap to USDC if health < 1.15)
-
-**In Learn mode:** Each leg is narrated before execution. "Step 1: Opening a 2x jitoSOL position. Your 3 SOL becomes 6 SOL exposure — you earn double the staking yield but if SOL drops 35%, this position gets liquidated." Confirmation required per step.
-
-**In Auto mode:** Single consent for the whole plan. Signatures per step, no narration between.
-
-**Stale Trigger reconciliation:** On `positionMonitor.ts` run loop, if multiply position is closed, cancel orphan Trigger.
-
----
-
-## Day 6 — Web Push + Simulate-in-Ask
-
-### Simulate tap in Ask mode:
-
-When agent returns strategies (in Ask mode), frontend shows "Simulate" button on each strategy card. On tap → calls `project_portfolio` tool → renders 30/60/90 bar chart inline.
-
-This reuses the `projectPortfolio.ts` built on Day 1.
-
-### Web Push:
-
-**Server:** `server/src/push/` already has Expo push. Add web push (`web-push` npm package). Same payload contract.
-
-**Frontend:** Permission request on `/app`. `ServiceWorker` receives push and opens position card via deep link.
-
----
-
-## Day 7 — Automations Tab + Audit Log
-
-### Mobile Automations tab:
-
-Lists active playbooks (from `GET /api/monitor/playbooks/:wallet`) + activity log (from `GET /api/monitor/activity/:wallet`).
-
-Two sub-views:
-- **Active:** each playbook card with pause/cancel, last-fired timestamp, scope summary
-- **History:** activity log entries with status (confirmed/failed), Solscan links, "auto" badge if agent-initiated
-
-In Learn mode: each playbook card includes a 1-line plain-English description of what it does.
-
-### Agent loop optimization:
-
-In `agent.ts` tool execution loop, identify independent tool calls (e.g. `fetchPortfolio` + `fetchLiveRates`) and run them with `Promise.all`. Currently they're sequential.
-
----
-
-## Day 8 ★ — Polish + Demo (PAIR)
-
-- Final mainnet smoke: Learn mode stake → narration → copilot lend → autopilot headline plan
-- Backoff + jitter on Jupiter 429s (in `server/src/data/fetchRates.ts` and transaction builders)
-- DX report locked (Frontier + Jupiter tracks)
-- Demo video: 3 users, 1 app, 3 stages of the journey
-
----
-
-## Day 9 — Submission
-
-- Frontier on Superteam Earn (Kamino track + web app URL)
-- Jupiter Developer Platform
-- All 9 blogs live
-- DX report public
-
----
-
-## Critical Files Map
-
-| Day | File | Change |
-|---|---|---|
-| 1 | `server/src/api/chat.routes.ts` | Verify `pushHistory` always fires |
-| 1 | `mobile/src/components/OnboardingSheet.js` | Add steps 5-6 (goal + verbosity questions) |
-| 1 | `server/src/data/projectPortfolio.ts` | **NEW** — forward yield projection |
-| 1 | `server/src/ai/agent.ts` | Add `project_portfolio` tool + response field |
-| 2 | `server/src/ai/agent.ts` | Add `buildModeCtx()`, inject tradeMode, post-tx narration rule |
-| 2 | `mobile/src/screens/ChatScreen.js` | Send `__post_tx__` after tx confirmed |
-| 2 | `server/src/data/riskGate.ts` | **NEW** — 3-tier risk evaluation |
-| 3 | `server/src/engine/planCompiler.ts` | **NEW** — multi-step plan with rollback |
-| 3 | `mobile/src/components/MultiplyCard.js` | **NEW** — leverage/multiply UI |
-| 4 | `server/src/monitor/playbookStore.ts` | **NEW** — playbook CRUD |
-| 4 | `server/src/db/database.ts` | Add `playbooks` table |
-| 4 | `server/src/monitor/monitorRoutes.ts` | Add playbook endpoints |
-| 5 | `server/src/ai/agent.ts` | Atomic plan wiring (multiply + stop-loss + playbook) |
-| 5 | `server/src/monitor/positionMonitor.ts` | Stale Trigger reconciliation |
-| 6 | `server/src/push/` | Web push delivery |
-| 7 | `mobile/src/screens/ChatScreen.js` | Automations tab (new tab or sheet) |
-
----
-
-## Never Cut
-
-- Day 2 risk gating (safety) + Learn mode (product soul)
-- Day 3 plan compiler + multiply (headline feature)
-- Day 5 atomic plan (demo centerpiece)
-- Day 8 demo cut + DX report
-
-## Cut First If Behind
-
-1. Day 6 simulation chart on web (mobile-only fallback)
-2. Day 6 Web Push (in-app banner instead)
-3. The second blog of any flagship day
-4. Day 1 projector: Marinade only (skip Kamino lending scenario)
+1. Which tab does this strengthen? (Home / Positions / Automations / Chat)
+2. Does it work in Practice mode with zero branching?
+3. Is it in this document? If not, it goes to backlog.
+4. No silent days — each role appends to the DX report at end of day.

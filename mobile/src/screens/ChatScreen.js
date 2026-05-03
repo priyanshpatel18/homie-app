@@ -49,6 +49,7 @@ import VoiceInputBubble from "../components/VoiceInputBubble";
 import ReceiveSheet from "../components/ReceiveSheet";
 import { InlineWalletQR } from "../components/ReceiveSheet";
 import MultiplyCard from "../components/MultiplyCard";
+import PlaybookCard from "../components/PlaybookCard";
 import Markdown from "react-native-markdown-display";
 import { F } from "../theme/fonts";
 import Svg, { Text as SvgText, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
@@ -652,10 +653,13 @@ export default function ChatScreen({ route, navigation }) {
                       }
 
                       for (const pos of (p.positions || [])) {
-                        if (pos.type === "liquid_stake" && pos.msolBalance > 0) {
-                          const msolPrice = prices[MSOL_MINT] || usdResult.solPrice;
-                          const val = pos.msolBalance * msolPrice;
-                          rows.push(`| mSOL (staked) | ${pos.msolBalance.toFixed(3)} | $${val.toFixed(0)} |`);
+                        if (pos.type === "liquid_stake") {
+                          const bal = pos.lstBalance ?? pos.msolBalance ?? 0;
+                          if (bal <= 0) continue;
+                          const sym = pos.symbol ?? "mSOL";
+                          const posPrice = (pos.mint ? prices[pos.mint] : null) || prices[MSOL_MINT] || usdResult.solPrice;
+                          const val = pos.usdValue > 0 ? pos.usdValue : bal * posPrice;
+                          rows.push(`| ${sym} (staked) | ${bal.toFixed(3)} | $${val.toFixed(0)} |`);
                         }
                         if (pos.type === "lending") {
                           for (const dep of (pos.deposits || [])) {
@@ -670,7 +674,7 @@ export default function ChatScreen({ route, navigation }) {
                       // ── Portfolio analysis ──────────────────────────────────
                       const stakedSol = (p.positions || [])
                         .filter((pos) => pos.type === "liquid_stake")
-                        .reduce((sum, pos) => sum + (pos.solEquivalent || pos.msolBalance || 0), 0);
+                        .reduce((sum, pos) => sum + (pos.solValue || pos.solEquivalent || pos.lstBalance || pos.msolBalance || 0), 0);
                       const lendingUsd = (p.positions || [])
                         .filter((pos) => pos.type === "lending")
                         .reduce((sum, pos) => sum + (pos.deposits || []).reduce((s, d) => s + (d.usdValue || 0), 0), 0);
@@ -1243,6 +1247,7 @@ export default function ChatScreen({ route, navigation }) {
         riskSnapshot: data.riskSnapshot || null,
         projection: data.projection || null,
         multiply: data.multiply || null,
+        playbookProposal: data.playbookProposal || null,
         awaitingConfirmation: data.awaitingConfirmation === true,
         // Auto-attach wallet QR when agent talks about receiving/funding and balance is low
         showWalletQR: (() => {
@@ -1611,6 +1616,18 @@ export default function ChatScreen({ route, navigation }) {
             <MultiplyCard
               data={item.multiply}
               onExecute={(lev, coll) => send(`Open Kamino Multiply at ${lev.toFixed(1)}x leverage on ${item.multiply.collateralAmount ?? ""} ${coll ?? item.multiply.collateral ?? "SOL"}`)}
+            />
+          )}
+          {item.playbookProposal && (
+            <PlaybookCard
+              data={item.playbookProposal}
+              walletAddress={walletAddress}
+              onSignTx={item.playbookProposal.serializedTx
+                ? (serializedTx) => confirmTransaction({ serializedTx, action: item.playbookProposal.name, protocol: "Jupiter DCA" })
+                : null
+              }
+              onConfirmed={() => send("playbook authorized — what else should I set up?")}
+              onDeclined={() => {}}
             />
           )}
           {item.strategies?.length > 0 && (

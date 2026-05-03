@@ -93,7 +93,7 @@ function buildWalletBlock(walletContext) {
     lines.push("Open positions:");
     for (const pos of portfolio.positions) {
       if (pos.type === "liquid_stake") {
-        lines.push(`  Marinade: ${pos.description}`);
+        lines.push(`  ${pos.protocol ?? "Staking"}: ${pos.description}`);
       } else if (pos.type === "lending") {
         const dep = pos.deposits.map((d) => `${d.amount.toFixed(4)} ${d.token}`).join(", ");
         lines.push(`  Kamino Lend: deposited ${dep || "—"}`);

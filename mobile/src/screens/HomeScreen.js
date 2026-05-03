@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePrivy, useEmbeddedSolanaWallet } from "@privy-io/expo";
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MessageSquare, TrendingUp, Shield, Zap, RefreshCw, ArrowRight, Sparkles, QrCode } from "lucide-react-native";
 import { F } from "../theme/fonts";
 import { IMPORTED_KEY_STORE, IMPORTED_ADDR_STORE, walletImportSignal } from "../components/LoginSheet";
@@ -17,6 +18,10 @@ import { getPortfolioPnL } from "../services/pnlService";
 import { loadAutopilot, AUTOPILOT_STRATEGIES } from "../services/autopilotService";
 import AutopilotSheet from "../components/AutopilotSheet";
 import ReceiveSheet from "../components/ReceiveSheet";
+import ModePickerSheet from "../components/ModePickerSheet";
+import LearnScreen from "./LearnScreen";
+
+const APP_MODE_KEY = "homie_app_mode";
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 const BG     = "#000000";
@@ -100,6 +105,43 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   const walletAddress = importedAddress ?? privyAddress;
+
+  // ── App mode: null = not chosen, "learn" | "pro" ─────────────────────────
+  const [appMode, setAppModeState] = useState(undefined); // undefined = loading
+
+  useEffect(() => {
+    AsyncStorage.getItem(APP_MODE_KEY)
+      .then((v) => setAppModeState(v ?? null))
+      .catch(() => setAppModeState(null));
+  }, []);
+
+  async function setAppMode(mode) {
+    await AsyncStorage.setItem(APP_MODE_KEY, mode).catch(() => {});
+    setAppModeState(mode);
+  }
+
+  // Don't render anything until mode is loaded (avoids flash)
+  if (appMode === undefined) {
+    return <View style={{ flex: 1, backgroundColor: "#000" }} />;
+  }
+
+  // First launch: show mode picker
+  if (appMode === null) {
+    return <ModePickerSheet onPick={setAppMode} />;
+  }
+
+  // Learn mode: render LearnScreen instead of this home
+  if (appMode === "learn") {
+    return (
+      <LearnScreen
+        walletAddress={walletAddress}
+        onSwitchMode={() => setAppMode("pro")}
+        onAskHomie={() => setAppMode("pro")}
+      />
+    );
+  }
+
+  // Pro mode: fall through to existing home UI below
 
   const [solBalance, setSolBalance]   = useState(null);
   const [portfolio, setPortfolio]     = useState(null);
@@ -201,9 +243,14 @@ export default function HomeScreen({ navigation }) {
                 <Text style={s.addr}>no wallet connected</Text>
               )}
             </View>
-            <TouchableOpacity style={s.chatIconBtn} onPress={() => openChat()} activeOpacity={0.8}>
-              <MessageSquare size={20} color={GREEN_DIM} strokeWidth={2} />
-            </TouchableOpacity>
+            <View style={s.headerBtns}>
+              <TouchableOpacity style={s.learnBtn} onPress={() => setAppMode("learn")} activeOpacity={0.8}>
+                <Text style={s.learnBtnText}>📚 Learn</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.chatIconBtn} onPress={() => openChat()} activeOpacity={0.8}>
+                <MessageSquare size={20} color={GREEN_DIM} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {loading ? (

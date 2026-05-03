@@ -72,6 +72,7 @@ const { projectYield }  = require("../data/projectPortfolio");
 const { evaluateRisk }  = require("../data/riskGate");
 const { compilePlan }   = require("../engine/planCompiler");
 const { getActivityLog } = require("../monitor/activityLog");
+const { createPlaybook, getPlaybooks, cancelPlaybook } = require("../monitor/playbookStore");
 
 // â"€â"€â"€ Profile context helper â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -664,6 +665,93 @@ const TOOLS = [
         required: ["orderAddress"],
       },
     },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_playbook",
+      description:
+        "Propose an automated playbook — a named, scope-bounded automation the user must explicitly authorize. Use instead of a one-shot action when: user says 'every week', 'automatically', 'whenever X happens', 'set up a rule', or 'invest $X regularly'. Also use for safety automations like 'move to safety if health drops' or 'compound my yield daily'. The user approves the scope (maxAmountUsd + duration) before it's created. For DCA specifically: always use this instead of create_dca_order when the user implies a recurring strategy.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Short human-readable name, e.g. 'Weekly SOL DCA' or 'Move to Safety'"
+          },
+          type: {
+            type: "string",
+            enum: ["move_to_safety", "dca", "compound", "rebalance", "custom"],
+            description: "Playbook category"
+          },
+          conditions: {
+            type: "array",
+            description: "When to trigger (empty = time-based or manual). For safety: [{metric:'health_factor', op:'<', value:1.15}]",
+            items: {
+              type: "object",
+              properties: {
+                metric: { type: "string", enum: ["health_factor", "sol_price_usd", "portfolio_usd", "time", "always"] },
+                op:     { type: "string", enum: ["<", ">", "<=", ">=", "==", "!="] },
+                value:  { type: "number" }
+              }
+            }
+          },
+          actions: {
+            type: "array",
+            description: "Steps the playbook will execute when triggered",
+            items: {
+              type: "object",
+              properties: {
+                tool:   { type: "string", description: "Agent tool name, e.g. 'prepare_swap_transaction'" },
+                params: { type: "object", description: "Tool parameters" },
+                label:  { type: "string", description: "Human-readable step label" }
+              }
+            }
+          },
+          maxAmountUsd: {
+            type: "number",
+            description: "Maximum USD the playbook is authorized to move per firing. Sets the scope ceiling."
+          },
+          cooldownHours: {
+            type: "number",
+            description: "Minimum hours between firings (default 24). For weekly DCA use 168."
+          },
+          durationDays: {
+            type: "number",
+            description: "How many days the authorization is valid (default 30). After this the playbook expires."
+          },
+          walletAddress: { type: "string", description: "User wallet" }
+        },
+        required: ["name", "type", "actions", "maxAmountUsd", "walletAddress"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_playbooks",
+      description: "List the user's active playbooks. Use when user asks 'what automations do I have', 'show my playbooks', or 'what's running automatically'.",
+      parameters: {
+        type: "object",
+        properties: { walletAddress: { type: "string" } },
+        required: ["walletAddress"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_playbook",
+      description: "Cancel an active playbook. Use when user says 'stop my automation', 'cancel my weekly DCA playbook', or 'turn off move-to-safety'.",
+      parameters: {
+        type: "object",
+        properties: {
+          walletAddress: { type: "string" },
+          playbookId:    { type: "string", description: "The playbook ID from list_playbooks" }
+        },
+        required: ["walletAddress", "playbookId"]
+      }
+    }
   },
   {
     type: "function",
@@ -2014,6 +2102,85 @@ async function executeTool(toolCall, walletContext) {
       return await cancelDcaOrderTx(args.orderAddress, walletContext.walletAddress);
     }
 
+    // --- Playbooks ---------------------------------------------------------------
+
+    case "propose_playbook": {
+      const wallet = args.walletAddress || walletContext.walletAddress;
+      if (!wallet) return { error: "Wallet address required to create a playbook" };
+
+      const durationDays  = args.durationDays  != null ? Number(args.durationDays)  : 30;
+      const cooldownHours = args.cooldownHours != null ? Number(args.cooldownHours) : 24;
+
+      const playbook = createPlaybook({
+        wallet,
+        name:          String(args.name),
+        type:          args.type || "custom",
+        conditions:    Array.isArray(args.conditions) ? args.conditions : [],
+        actions:       Array.isArray(args.actions)    ? args.actions    : [],
+        maxAmountUsd:  Number(args.maxAmountUsd) || 0,
+        cooldownHours,
+        durationDays,
+      });
+
+      // For DCA type: also build the on-chain Jupiter recurring tx so the user can sign it
+      let serializedTx: string | undefined;
+      if (args.type === "dca") {
+        const dcaAction = (Array.isArray(args.actions) ? args.actions : [])
+          .find((a: { tool: string }) => a.tool === "create_dca_order");
+        if (dcaAction?.params) {
+          const dcaResult = await buildDcaOrderTx({
+            inputToken:     dcaAction.params.inputToken,
+            outputToken:    dcaAction.params.outputToken,
+            amountPerCycle: Number(dcaAction.params.amountPerCycle),
+            intervalStr:    dcaAction.params.intervalStr ?? `${cooldownHours * 3600}`,
+            cycles:         dcaAction.params.cycles ? Number(dcaAction.params.cycles) : undefined,
+            walletAddress:  wallet,
+            network:        walletContext.network || "mainnet",
+          }).catch(() => null);
+          if (dcaResult && !dcaResult.error) serializedTx = dcaResult.serializedTx;
+        }
+      }
+
+      return {
+        success:      true,
+        playbookId:   playbook.id,
+        name:         playbook.name,
+        type:         playbook.type,
+        conditions:   playbook.conditions,
+        actions:      playbook.actions,
+        expiresAt:    playbook.expiresAt,
+        maxAmountUsd: playbook.maxAmountUsd,
+        cooldownHours,
+        durationDays,
+        serializedTx,               // present for dca — user must sign to activate Jupiter order
+        requiresApproval: true,     // mobile shows PlaybookCard confirmation
+        walletAddress: wallet,
+      };
+    }
+
+    case "list_playbooks": {
+      const wallet = args.walletAddress || walletContext.walletAddress;
+      const playbooks = getPlaybooks(wallet);
+      return {
+        count: playbooks.length,
+        playbooks: playbooks.map((p) => ({
+          id:           p.id,
+          name:         p.name,
+          type:         p.type,
+          maxAmountUsd: p.maxAmountUsd,
+          cooldownHours: p.cooldownHours,
+          expiresAt:    p.expiresAt,
+          lastFiredAt:  p.lastFiredAt,
+          actionsCount: p.actions.length,
+        })),
+      };
+    }
+
+    case "cancel_playbook": {
+      const wallet = args.walletAddress || walletContext.walletAddress;
+      return cancelPlaybook(wallet, String(args.playbookId));
+    }
+
     // --- Jupiter Limit / Trigger Orders -----------------------------------------
 
     case "create_limit_order": {
@@ -2983,7 +3150,8 @@ RESPONSE FORMAT â€" always respond in this exact JSON:
     "domain": "primary .sol domain or null",
     "domains": ["toly.sol", "toly2.sol"],
     "solBalance": number,
-    "tokens": [{ "mint": "...", "symbol": "...", "name": "...", "balance": number }]
+    "tokens": [{ "mint": "...", "symbol": "...", "name": "...", "balance": number, "usdValue": number or null, "logoUri": "url or null" }],
+    "positions": [{ "type": "liquid_stake" or "lending", "protocol": "...", "symbol": "...", "mint": "...", "lstBalance": number, "usdValue": number or null, "logoUri": "url or null" }]
   },
   "tokenChart": null or { ... exact get_token_chart result ... },
   "sentiment": null or { ... exact get_sentiment result ... },
@@ -2991,13 +3159,15 @@ RESPONSE FORMAT â€" always respond in this exact JSON:
   "projection": null or { ... exact project_portfolio result ... },
   "riskCard": null or { "tier": "safe" | "warn" | "severe", "reasons": ["..."] },
   "multiply": null or { "collateral": "SOL", "collateralAmount": 1.5, "collateralUsd": 225, "entryPrice": 150, "collateralApy": 7.5, "debtApy": 3.2, "suggestedLeverage": 2.0, "maxLeverage": 3.0, "liquidationLtv": 0.85, "isCorrelated": false, "protocol": "Kamino", "market": "SOL-USDC Multiply" },
+  "playbookProposal": null or true,
   "awaitingConfirmation": false
 }
 
 PORTFOLIO FIELD RULES:
 - Set portfolio to the raw data from get_portfolio or lookup_wallet whenever those tools are called
-- Include solBalance (number), walletAddress, domain (primary .sol name or null), domains (full array of .sol names from tool result, or []), and the full tokens array (mint, symbol, name, balance)
-- Keep your message SHORT when portfolio is set â€" the app renders a rich card, so don't repeat all the token details in text
+- Include solBalance (number), walletAddress, domain (primary .sol name or null), domains (full array of .sol names from tool result, or []), the full tokens array (mint, symbol, name, balance, usdValue), AND the full positions array from the tool result (LST staking positions and Kamino lending positions — each with type, protocol, symbol, mint, lstBalance, usdValue)
+- Include logoUri for each token and position (pass through from tool result — it's the token image URL from DAS metadata)
+- When portfolio is set, your message MUST be one sentence maximum — the app renders a full rich card with all balances, prices, and tokens already visible. Do NOT list tokens, balances, or USD values in text. Just say something like "Here's your wallet." or "Got it — here's your portfolio."
 - Set portfolio: null for all other responses
 
 TOKENCHART FIELD RULES:
@@ -3024,6 +3194,15 @@ RISKSNAPSHOT FIELD RULES:
 - scenarioLabel: concise, no emojis (e.g. "SOL âˆ'40%", "Bear scenario", "Bull run +50%")
 - Keep your message to one sentence â€" the card does the work
 - Set riskSnapshot: null for all other responses
+
+PLAYBOOK RULES:
+- Use propose_playbook INSTEAD of create_dca_order when: user says "every week/month", "automatically", "whenever", "set up a rule", or "invest regularly". Playbooks are scope-bounded (maxAmountUsd declared upfront) and expire — safer than open-ended orders.
+- For DCA specifically: propose_playbook with type="dca", cooldownHours=168 (weekly), actions=[{tool:"create_dca_order", params:{...}, label:"Buy SOL weekly"}]
+- For safety automations ("move to safety if health < 1.15"): propose_playbook with type="move_to_safety", conditions=[{metric:"health_factor", op:"<", value:1.15}]
+- Set playbookProposal: true in your JSON response when propose_playbook returns success. The mobile renders a full confirmation card — do NOT describe the playbook in detail in your message. Keep message to 1 sentence: "Here's your playbook — review the scope and confirm to activate it."
+- Do NOT say the playbook is already active. It requires user confirmation on mobile first.
+- Use list_playbooks when user asks what automations are running.
+- Use cancel_playbook when user wants to stop an automation — always confirm the playbook name before cancelling.
 
 PROJECTION FIELD RULES:
 - Set projection to the exact object returned by project_portfolio when that tool is called
@@ -3069,7 +3248,37 @@ When a user asks for a multi-step strategy (e.g. "unstake my SOL, swap half to U
 narrativeLevel mapping (frontend controls display, you always generate plainEnglish):
 - full (< 10 actions): plainEnglish shown for every step before user confirms
 - brief (10–30 actions): plainEnglish shown only for steps with warn/high risk
-- silent (30+ actions, technical message): plainEnglish hidden, label + amounts only`;
+- silent (30+ actions, technical message): plainEnglish hidden, label + amounts only
+
+ATOMIC PLAN — KAMINO MULTIPLY + STOP-LOSS + SAFETY PLAYBOOK:
+This is the headline three-leg flow. Trigger it when the user confirms a Kamino Multiply position OR says something like "protect my leverage", "full protection", "attach stop-loss", or "set up safety for my position".
+
+LEG 1 — Kamino Multiply (already in MultiplyCard flow):
+- open_kamino_leverage → multiply card rendered, user confirms from the card
+
+AFTER MULTIPLY IS CONFIRMED (user message starts with "__post_tx__" and metadata contains type="kamino_multiply"):
+- Auto-propose the stop-loss: "your position is live — want me to attach a stop-loss OCO that auto-sells if SOL drops to your liquidation price? I'll also register a move-to-safety playbook that kicks in before you hit liquidation."
+- Set awaitingConfirmation: true with choices: ["Yes, protect it", "Skip protection"]
+
+LEG 2 — Stop-loss (user says yes):
+- Call create_oco_order with: holdingToken=collToken (e.g. SOL), quoteToken=debtToken (e.g. USDC), triggerPrice = liquidation price from the multiply position × 1.10 (10% buffer above liquidation)
+- This creates an automatic sell that triggers before liquidation
+
+LEG 3 — Safety playbook (immediately after stop-loss, no extra prompt needed):
+- Call propose_playbook with type="move_to_safety", conditions=[{metric:"health_factor", op:"<", value:1.15}], actions that repay the Kamino loan and swap to USDC
+- Name it "Move to Safety — [collToken] Multiply"
+- maxAmountUsd = full position value, cooldownHours = 1, durationDays = 90
+- Set playbookProposal: true so the mobile shows the PlaybookCard for authorization
+
+MODE-AWARE NARRATION for the atomic plan:
+- In LEARN mode: narrate each leg before presenting it. "Step 1: Opening your 2× jitoSOL position. Your {amount} SOL becomes {amount×2} SOL exposure — you earn double the staking yield ({apy}%) but if SOL drops {liqPct}%, this position gets liquidated."
+  After multiply confirmed: "Step 2: Creating an OCO stop-loss at \${triggerPrice} — this automatically sells your position if SOL falls there, recovering your collateral before liquidation."
+  After OCO: "Step 3: Registering a move-to-safety playbook — if your health ratio ever drops below 1.15, it automatically repays your debt and moves funds to USDC."
+- In AUTO mode: confirm multiply, then in one message: "Position open. Stop-loss at \${price} + safety playbook registered. You're protected." No narration between legs.
+- In ASK mode: propose stop-loss after multiply, but let user choose whether to add the playbook separately.
+
+STALE TRIGGER NOTE: When a multiply position is closed (user exits Kamino), the associated stop-loss OCO order becomes orphaned. The monitor loop handles cancellation automatically — you don't need to manage this.`;
+
 
 
 
@@ -3102,7 +3311,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
     { role: "user", content: userMessage },
   ];
 
-  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, riskCard: null, multiply: null, compiledPlan: null };
+  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, riskCard: null, multiply: null, compiledPlan: null, playbookProposal: null };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await createWithRetry({
@@ -3150,6 +3359,24 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
                 }),
               };
             }
+
+            if (tc.function?.name === "propose_playbook" && result && result.success) {
+              sidecars.playbookProposal = result;
+              return {
+                role: "tool", tool_call_id: tc.id,
+                content: JSON.stringify({
+                  playbookCreated: true,
+                  playbookId:   result.playbookId,
+                  name:         result.name,
+                  type:         result.type,
+                  maxAmountUsd: result.maxAmountUsd,
+                  durationDays: result.durationDays,
+                  hasTx:        !!result.serializedTx,
+                  note: "Playbook proposal ready — set playbookProposal: true in your JSON response. Mobile will show a confirmation card. Your message: 1-2 sentences: what it does, max scope, expiry. Do NOT say it is active yet — user must confirm.",
+                }),
+              };
+            }
+
             if (tc.function?.name === "get_token_chart" && result && !result.error) {
               sidecars.tokenChart = result;
               return {
@@ -3255,6 +3482,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
         projection:  sidecars.projection || null,
         riskCard: parsed.riskCard || sidecars.riskCard || null,
         multiply: sidecars.multiply || null,
+        playbookProposal: sidecars.playbookProposal || null,
         awaitingConfirmation: parsed.awaitingConfirmation === true,
       };
     } catch {
@@ -3263,7 +3491,7 @@ async function agentChat(userMessage, conversationHistory, walletContext) {
         strategies: [], choices: [], transaction: null, tip: null, action: null, portfolio: null,
         tokenChart: sidecars.tokenChart || null, sentiment: sidecars.sentiment || null,
         crossVenueStrategy: sidecars.crossVenueStrategy || null,
-        riskSnapshot: null, projection: null, riskCard: sidecars.riskCard || null, multiply: sidecars.multiply || null, awaitingConfirmation: false,
+        riskSnapshot: null, projection: null, riskCard: sidecars.riskCard || null, multiply: sidecars.multiply || null, playbookProposal: sidecars.playbookProposal || null, awaitingConfirmation: false,
       };
     }
   }
@@ -3381,7 +3609,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
   ];
 
   onProgress("ðŸ§  Thinking...");
-  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, riskCard: null, multiply: null, compiledPlan: null };
+  let sidecars = { tokenChart: null, sentiment: null, crossVenueStrategy: null, projection: null, riskCard: null, multiply: null, compiledPlan: null, playbookProposal: null };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await createWithRetry({
@@ -3433,6 +3661,24 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
                 }),
               };
             }
+
+            if (tc.function?.name === "propose_playbook" && result && result.success) {
+              sidecars.playbookProposal = result;
+              return {
+                role: "tool", tool_call_id: tc.id,
+                content: JSON.stringify({
+                  playbookCreated: true,
+                  playbookId:   result.playbookId,
+                  name:         result.name,
+                  type:         result.type,
+                  maxAmountUsd: result.maxAmountUsd,
+                  durationDays: result.durationDays,
+                  hasTx:        !!result.serializedTx,
+                  note: "Playbook proposal ready — set playbookProposal: true in your JSON response. Mobile will show a confirmation card. Your message: 1-2 sentences: what it does, max scope, expiry. Do NOT say it is active yet — user must confirm.",
+                }),
+              };
+            }
+
             if (tc.function?.name === "get_token_chart" && result && !result.error) {
               sidecars.tokenChart = result;
               return {
@@ -3540,6 +3786,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
         projection:  sidecars.projection || null,
         riskCard: parsed.riskCard || sidecars.riskCard || null,
         multiply: sidecars.multiply || null,
+        playbookProposal: sidecars.playbookProposal || null,
         awaitingConfirmation: parsed.awaitingConfirmation === true,
       };
     } catch {
@@ -3548,7 +3795,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
         strategies: [], choices: [], transaction: null, tip: null, action: null, portfolio: null,
         tokenChart: sidecars.tokenChart || null, sentiment: sidecars.sentiment || null,
         crossVenueStrategy: sidecars.crossVenueStrategy || null,
-        riskSnapshot: null, projection: null, riskCard: sidecars.riskCard || null, multiply: sidecars.multiply || null, awaitingConfirmation: false,
+        riskSnapshot: null, projection: null, riskCard: sidecars.riskCard || null, multiply: sidecars.multiply || null, playbookProposal: sidecars.playbookProposal || null, awaitingConfirmation: false,
       };
     }
   }
@@ -3557,7 +3804,7 @@ async function agentChatStream(userMessage, conversationHistory, walletContext, 
     message: "I hit my thinking limit on this one. Try breaking it into simpler steps.",
     strategies: [], choices: [], transaction: null, tip: null, portfolio: null,
     tokenChart: sidecars.tokenChart || null, sentiment: null,
-    crossVenueStrategy: null, projection: null, riskCard: null, multiply: sidecars.multiply || null, awaitingConfirmation: false,
+    crossVenueStrategy: null, projection: null, riskCard: null, multiply: sidecars.multiply || null, playbookProposal: null, awaitingConfirmation: false,
   };
 }
 
