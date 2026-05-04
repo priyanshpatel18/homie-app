@@ -1,0 +1,72 @@
+name: Telegram PR Notifier
+
+on:
+  pull_request:
+    types: [opened, reopened, closed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+          REPO:    ${{ github.repository }}
+          ACTOR:   ${{ github.event.pull_request.user.login }}
+          NUM:     ${{ github.event.pull_request.number }}
+          TITLE:   ${{ github.event.pull_request.title }}
+          BODY:    ${{ github.event.pull_request.body }}
+          URL:     ${{ github.event.pull_request.html_url }}
+          BASE:    ${{ github.event.pull_request.base.ref }}
+          HEAD:    ${{ github.event.pull_request.head.ref }}
+          ACTION:  ${{ github.event.action }}
+          MERGED:  ${{ github.event.pull_request.merged }}
+        run: |
+          set -euo pipefail
+
+          # Decide label based on event
+          if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+            LABEL="<b>MERGED</b>"
+          elif [ "$ACTION" = "closed" ] && [ "$MERGED" != "true" ]; then
+            LABEL="<b>PR CLOSED</b>"
+          else
+            LABEL="<b>PULL REQUEST</b>"
+          fi
+
+          ESCAPE='s/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
+          T=$(printf '%s' "$TITLE"  | sed "$ESCAPE")
+          A=$(printf '%s' "$ACTOR"  | sed "$ESCAPE")
+          R=$(printf '%s' "$REPO"   | sed "$ESCAPE")
+          BS=$(printf '%s' "$BASE"  | sed "$ESCAPE")
+          HD=$(printf '%s' "$HEAD"  | sed "$ESCAPE")
+
+          # Telegram caps messages at 4096 chars — trim body to leave room for header.
+          B=$(printf '%s' "${BODY:-}" | sed "$ESCAPE" | head -c 3500)
+          if [ -z "$B" ]; then
+            B="<i>(no description)</i>"
+          fi
+
+          TEXT="${LABEL} · #${NUM} · ${A}
+          <i>${R}</i> · <code>${HD}</code> → <code>${BS}</code>
+
+          <b>${T}</b>
+
+          ${B}
+
+          <a href=\"${URL}\">View PR</a>"
+
+          ARGS=(
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"
+            --data-urlencode "text=${TEXT}"
+            --data-urlencode "parse_mode=HTML"
+            --data-urlencode "disable_web_page_preview=true"
+          )
+          if [ -n "${TELEGRAM_THREAD_ID:-}" ]; then
+            ARGS+=(--data-urlencode "message_thread_id=${TELEGRAM_THREAD_ID}")
+          fi
+
+          curl -fsS -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            "${ARGS[@]}"

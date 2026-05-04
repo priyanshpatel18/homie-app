@@ -7,7 +7,8 @@ on:
 
 jobs:
   notify:
-    if: ${{ github.event.deleted == false }}
+    # Skip pushes to main that come from a PR merge — telegram-pr.yml handles those.
+    if: ${{ github.event.deleted == false && !(github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Merge pull request')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Send to Telegram
@@ -25,10 +26,13 @@ jobs:
           set -euo pipefail
           ESCAPE='s/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
           FIRST=$(printf '%s' "$MSG" | head -n1 | sed "$ESCAPE")
+          BRANCH_E=$(printf '%s' "$BRANCH" | sed "$ESCAPE")
+          ACTOR_E=$(printf '%s' "$ACTOR" | sed "$ESCAPE")
+          REPO_E=$(printf '%s' "$REPO" | sed "$ESCAPE")
           SHORT="${SHA:0:7}"
 
-          TEXT="<b>${BRANCH}</b> · ${ACTOR}
-          <i>${REPO}</i>
+          TEXT="<b>COMMITTED</b> · <b>${BRANCH_E}</b> · ${ACTOR_E}
+          <i>${REPO_E}</i>
 
           ${FIRST}
           <a href=\"${URL}\"><code>${SHORT}</code></a>"
