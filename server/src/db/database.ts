@@ -84,6 +84,13 @@ db.exec(`
     created_at    INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_playbooks_wallet ON playbooks(wallet, active);
+
+  CREATE TABLE IF NOT EXISTS user_preferences (
+    wallet     TEXT    PRIMARY KEY,
+    goal       TEXT    NOT NULL,
+    verbosity  TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 export = db;

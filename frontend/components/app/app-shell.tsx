@@ -8,6 +8,7 @@ import { AppTopBar } from "./app-top-bar";
 import { AutomationsTab } from "./automations-tab";
 import { ChatTab } from "./chat-tab";
 import { HomeTab } from "./home-tab";
+import { OnboardingSheet } from "./onboarding-sheet";
 import { PositionsTab } from "./positions-tab";
 import type { AppTab } from "./tabs";
 
@@ -37,6 +38,7 @@ export function AppShell({ initialTab }: { initialTab: AppTab }) {
           {tab === "automations" && <AutomationsTab />}
           {tab === "chat" && <ChatTab />}
         </main>
+        <OnboardingSheet />
       </div>
     </TooltipProvider>
   );
