@@ -1,0 +1,48 @@
+name: Telegram PR Notifier
+
+on:
+  pull_request:
+    types: [opened, reopened, closed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install markdown-it
+        run: npm install --no-save --silent markdown-it@14
+
+      - name: Send to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+          REPO:    ${{ github.repository }}
+          ACTOR:   ${{ github.event.pull_request.user.login }}
+          NUM:     ${{ github.event.pull_request.number }}
+          TITLE:   ${{ github.event.pull_request.title }}
+          BODY:    ${{ github.event.pull_request.body }}
+          URL:     ${{ github.event.pull_request.html_url }}
+          BASE:    ${{ github.event.pull_request.base.ref }}
+          HEAD:    ${{ github.event.pull_request.head.ref }}
+          ACTION:  ${{ github.event.action }}
+          MERGED:  ${{ github.event.pull_request.merged }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+            export LABEL="MERGED"
+          elif [ "$ACTION" = "closed" ] && [ "$MERGED" != "true" ]; then
+            export LABEL="PR CLOSED"
+          else
+            export LABEL="PULL REQUEST"
+          fi
+          node .github/scripts/telegram-pr-notify.mjs
