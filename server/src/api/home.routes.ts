@@ -2,13 +2,17 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { requireWalletOwnership } from "../middleware/walletOwnership";
 import {
-  getPreferences,
+  defaultRiskFor,
+  getPersona,
   isGoal,
+  isRisk,
   isVerbosity,
-  savePreferences,
+  savePersona,
   type Goal,
+  type Persona,
+  type Risk,
   type Verbosity,
-} from "../db/preferencesStore";
+} from "../db/personasStore";
 
 const { fetchPortfolio } = require("../data/fetchPortfolio") as {
   fetchPortfolio: (
@@ -29,7 +33,37 @@ const { fetchLiveRates } = require("../data/fetchRates") as {
   fetchLiveRates: () => Promise<Record<string, number | string | null>>;
 };
 
+const { getRiskAnalysis } = require("../engine/risk/scorer") as {
+  getRiskAnalysis: (pool: PoolInput) => RiskAnalysis;
+};
+
+interface PoolInput {
+  pair: string;
+  tvl: number;
+  apy: number;
+  volume7d: number;
+  tokens: string[];
+  isStablePair: boolean;
+  isBluechip: boolean;
+  isMeme: boolean;
+  isUnknown: boolean;
+  audited: boolean;
+  rewardSource: "fees" | "emissions" | "mixed";
+  protocol: string;
+  action: "stake" | "lend" | "lp";
+}
+
+interface RiskAnalysis {
+  score: number;
+  risk: Risk;
+  label: string;
+  reasons: string[];
+  warnings: string[];
+}
+
 export const homeRouter: Router = Router();
+
+// ─── Snapshot ─────────────────────────────────────────────────────────────────
 
 homeRouter.get(
   "/snapshot/:walletAddress",
@@ -75,12 +109,13 @@ homeRouter.get(
   }
 );
 
-// ─── Preferences ──────────────────────────────────────────────────────────────
+// ─── Persona (preferences) ────────────────────────────────────────────────────
 
 interface PrefsBody {
   walletAddress?: string;
   goal?: unknown;
   verbosity?: unknown;
+  risk?: unknown;
 }
 
 homeRouter.post(
@@ -101,8 +136,9 @@ homeRouter.post(
         error: "verbosity must be one of explain | key_insight | execute_report",
       });
     }
-    const prefs = savePreferences(wallet, body.goal, body.verbosity);
-    res.json(prefs);
+    const risk = isRisk(body.risk) ? body.risk : undefined;
+    const persona = savePersona(wallet, body.goal, body.verbosity, risk);
+    res.json(persona);
   }
 );
 
@@ -113,114 +149,164 @@ homeRouter.get(
   (req: Request, res: Response) => {
     const wallet = String(req.params.walletAddress ?? "");
     if (!wallet) return res.status(400).json({ error: "walletAddress required" });
-    const prefs = getPreferences(wallet);
-    res.json(prefs);
+    res.json(getPersona(wallet));
   }
 );
 
 // ─── Idle suggestion ──────────────────────────────────────────────────────────
+// Risk-ranked recommendation across three protocols. Pool stubs are fed into
+// the same getRiskAnalysis() the strategy engine uses, then filtered down to
+// the persona's risk band.
 
-interface IdleSuggestionResponse {
-  walletAddress: string;
-  idleBalanceUsd: number;
-  suggestion: {
-    protocol: string;
-    action: string;
-    amountUsd: number;
-    rationale: string;
-    apy: number | null;
-  } | null;
-  goal: Goal | null;
-  verbosity: Verbosity | null;
-}
-
-interface SuggestionCandidate {
+interface CandidateProtocol {
   protocol: string;
   action: string;
-  apy: number | null;
+  pair: string;
+  apyRateKey: string;
+  fallbackApy: number;
+  tvl: number;
+  rewardSource: "fees" | "emissions" | "mixed";
 }
 
-function pickSuggestion(
-  goal: Goal | null,
+const CANDIDATES: readonly CandidateProtocol[] = [
+  {
+    protocol: "Marinade",
+    action: "Stake SOL → mSOL",
+    pair: "mSOL (Marinade)",
+    apyRateKey: "marinade_apy",
+    fallbackApy: 7.0,
+    tvl: 800_000_000,
+    rewardSource: "fees",
+  },
+  {
+    protocol: "Kamino",
+    action: "Lend SOL",
+    pair: "SOL Lending (Kamino)",
+    apyRateKey: "kamino_sol_lending_apy",
+    fallbackApy: 5.5,
+    tvl: 150_000_000,
+    rewardSource: "fees",
+  },
+  {
+    protocol: "Jupiter Lend",
+    action: "Lend SOL",
+    pair: "SOL Lending (Jupiter)",
+    apyRateKey: "jup_lend_sol_apy",
+    fallbackApy: 6.0,
+    tvl: 80_000_000,
+    rewardSource: "fees",
+  },
+];
+
+interface ScoredCandidate {
+  protocol: string;
+  action: string;
+  apy: number;
+  score: number;
+  risk: Risk;
+}
+
+function rateAsNumber(
+  rates: Record<string, number | string | null>,
+  key: string
+): number | null {
+  const v = rates[key];
+  return typeof v === "number" ? v : null;
+}
+
+function scoreCandidates(
   rates: Record<string, number | string | null>
-): SuggestionCandidate {
-  const num = (k: string): number | null => {
-    const v = rates[k];
-    return typeof v === "number" ? v : null;
-  };
+): ScoredCandidate[] {
+  return CANDIDATES.map((c) => {
+    const liveApy = rateAsNumber(rates, c.apyRateKey);
+    const apy = liveApy ?? c.fallbackApy;
+    const action = c.action.startsWith("Stake") ? "stake" : "lend";
 
-  const marinade = num("marinade_apy");
-  const jito = num("jitosol_apy");
-  const sanctumInf = num("sanctum_inf_apy");
-  const kaminoSolLend = num("kamino_sol_lending_apy");
-  const kaminoUsdcLend = num("kamino_usdc_lending_apy");
-  const kaminoLp = num("kamino_sol_usdc_lp_apy");
-  const jupSolLend = num("jup_lend_sol_apy");
-  const jupUsdcLend = num("jup_lend_usdc_apy");
+    const pool: PoolInput = {
+      pair: c.pair,
+      tvl: c.tvl,
+      apy,
+      volume7d: c.tvl * 0.1,
+      tokens: ["SOL"],
+      isStablePair: false,
+      isBluechip: true,
+      isMeme: false,
+      isUnknown: false,
+      audited: true,
+      rewardSource: c.rewardSource,
+      protocol: c.protocol,
+      action,
+    };
 
-  if (goal === "passive_income") {
-    const stables: SuggestionCandidate[] = [
-      { protocol: "Kamino", action: "Lend USDC", apy: kaminoUsdcLend },
-      { protocol: "Jupiter Lend", action: "Lend USDC", apy: jupUsdcLend },
-    ];
-    const best = stables
-      .filter((c): c is SuggestionCandidate & { apy: number } => c.apy != null)
-      .sort((a, b) => b.apy - a.apy)[0];
-    if (best) return best;
-    return { protocol: "Marinade", action: "Stake SOL → mSOL", apy: marinade };
-  }
+    const analysis = getRiskAnalysis(pool);
+    return {
+      protocol: c.protocol,
+      action: c.action,
+      apy,
+      score: analysis.score,
+      risk: analysis.risk,
+    };
+  });
+}
 
-  if (goal === "grow") {
-    const growth: SuggestionCandidate[] = [
-      { protocol: "Kamino", action: "SOL/USDC LP", apy: kaminoLp },
-      { protocol: "Sanctum", action: "Stake SOL → INF", apy: sanctumInf },
-      { protocol: "Jito", action: "Stake SOL → jitoSOL", apy: jito },
-    ];
-    const best = growth
-      .filter((c): c is SuggestionCandidate & { apy: number } => c.apy != null)
-      .sort((a, b) => b.apy - a.apy)[0];
-    if (best) return best;
-    return { protocol: "Marinade", action: "Stake SOL → mSOL", apy: marinade };
-  }
+// Distance from the persona's risk preference. low=0, medium=1, high=2.
+const RISK_RANK: Record<Risk, number> = { low: 0, medium: 1, high: 2 };
 
-  // explore (or unset) — recommend the safest, most liquid option
-  const liquid: SuggestionCandidate[] = [
-    { protocol: "Marinade", action: "Stake SOL → mSOL", apy: marinade },
-    { protocol: "Jito", action: "Stake SOL → jitoSOL", apy: jito },
-    { protocol: "Kamino", action: "Lend SOL", apy: kaminoSolLend },
-    { protocol: "Jupiter Lend", action: "Lend SOL", apy: jupSolLend },
-  ];
-  const best = liquid
-    .filter((c): c is SuggestionCandidate & { apy: number } => c.apy != null)
-    .sort((a, b) => b.apy - a.apy)[0];
-  return best ?? { protocol: "Marinade", action: "Stake SOL → mSOL", apy: null };
+function rankForPersona(
+  candidates: ScoredCandidate[],
+  personaRisk: Risk
+): ScoredCandidate[] {
+  return [...candidates].sort((a, b) => {
+    const da = Math.abs(RISK_RANK[a.risk] - RISK_RANK[personaRisk]);
+    const db = Math.abs(RISK_RANK[b.risk] - RISK_RANK[personaRisk]);
+    if (da !== db) return da - db;                  // closer to preference first
+    if (b.score !== a.score) return b.score - a.score; // safer-within-band first
+    return b.apy - a.apy;                            // higher APY tiebreaker
+  });
 }
 
 function rationaleFor(
-  goal: Goal | null,
-  verbosity: Verbosity | null,
-  candidate: SuggestionCandidate,
-  amountUsd: number
+  persona: Persona | null,
+  pick: ScoredCandidate
 ): string {
-  const apyText = candidate.apy != null ? `${candidate.apy.toFixed(2)}% APY` : "live yield";
-  const amount = `$${amountUsd.toFixed(2)}`;
+  const apyText = `${pick.apy.toFixed(2)}% APY`;
+  const verbosity = persona?.verbosity ?? "key_insight";
 
   if (verbosity === "execute_report") {
-    return `Put ${amount} into ${candidate.protocol} for ${apyText}.`;
+    return `Route idle SOL into ${pick.protocol} for ${apyText}.`;
   }
 
   if (verbosity === "explain") {
+    const goal = persona?.goal ?? null;
+    const riskNote =
+      pick.risk === "low"
+        ? "Conservative pick — high TVL, audited protocol."
+        : pick.risk === "medium"
+          ? "Moderate risk — established protocol with reasonable yield."
+          : "Higher upside — accept more protocol risk for the extra yield.";
     if (goal === "passive_income") {
-      return `${amount} idle could earn ${apyText} on ${candidate.protocol}. Stable yield, withdraw any time.`;
+      return `${pick.protocol} earns ${apyText}. ${riskNote}`;
     }
     if (goal === "grow") {
-      return `${amount} idle could compound at ${apyText} via ${candidate.protocol}. Slightly more risk, more upside.`;
+      return `${pick.protocol} compounds at ${apyText}. ${riskNote}`;
     }
-    return `${amount} idle could earn ${apyText} on ${candidate.protocol}. Liquid and easy to unwind while you explore.`;
+    return `${pick.protocol} earns ${apyText}. ${riskNote}`;
   }
 
-  // key_insight (default)
-  return `${amount} idle → ${apyText} on ${candidate.protocol}.`;
+  return `${pick.protocol} → ${apyText} (${pick.risk} risk).`;
+}
+
+interface IdleSuggestionResponse {
+  walletAddress: string;
+  idleSol: number;
+  persona: Persona | null;
+  suggestion: {
+    protocol: string;
+    action: string;
+    rationale: string;
+    estimatedApyPct: number;
+    preparedTxStub: null;
+  } | null;
 }
 
 homeRouter.get(
@@ -236,43 +322,40 @@ homeRouter.get(
       typeof req.query.network === "string" ? req.query.network : "mainnet";
 
     try {
-      const [portfolio, market, rates] = await Promise.all([
+      const [portfolio, rates] = await Promise.all([
         fetchPortfolio(walletAddress, network).catch(() => null),
-        fetchMarketContext().catch(() => null),
-        fetchLiveRates().catch(() => ({} as Record<string, number | string | null>)),
+        fetchLiveRates().catch(
+          () => ({}) as Record<string, number | string | null>
+        ),
       ]);
 
-      const solBalance = portfolio?.solBalance ?? 0;
-      const solPrice = market?.sol?.usd ?? 0;
-      const tokensUsd = (portfolio?.tokens ?? []).reduce(
-        (sum, t) => sum + (t.usdValue ?? 0),
-        0
-      );
-      const idleBalanceUsd =
-        Math.round((solBalance * solPrice + tokensUsd) * 100) / 100;
+      const idleSol = portfolio?.solBalance ?? 0;
+      const persona = getPersona(walletAddress);
 
-      const prefs = getPreferences(walletAddress);
-      const goal = prefs?.goal ?? null;
-      const verbosity = prefs?.verbosity ?? null;
+      // No persona yet → fall back to the goal-derived default risk.
+      const personaRisk: Risk =
+        persona?.risk ?? defaultRiskFor(persona?.goal ?? "explore");
 
       let suggestion: IdleSuggestionResponse["suggestion"] = null;
-      if (idleBalanceUsd > 0) {
-        const candidate = pickSuggestion(goal, rates);
-        suggestion = {
-          protocol: candidate.protocol,
-          action: candidate.action,
-          amountUsd: idleBalanceUsd,
-          apy: candidate.apy,
-          rationale: rationaleFor(goal, verbosity, candidate, idleBalanceUsd),
-        };
+      if (idleSol > 0) {
+        const ranked = rankForPersona(scoreCandidates(rates), personaRisk);
+        const pick = ranked[0];
+        if (pick) {
+          suggestion = {
+            protocol: pick.protocol,
+            action: pick.action,
+            rationale: rationaleFor(persona, pick),
+            estimatedApyPct: parseFloat(pick.apy.toFixed(2)),
+            preparedTxStub: null,
+          };
+        }
       }
 
       const response: IdleSuggestionResponse = {
         walletAddress,
-        idleBalanceUsd,
+        idleSol,
+        persona,
         suggestion,
-        goal,
-        verbosity,
       };
       res.json(response);
     } catch (err) {

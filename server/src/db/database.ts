@@ -91,6 +91,14 @@ db.exec(`
     verbosity  TEXT    NOT NULL,
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS personas (
+    wallet     TEXT    PRIMARY KEY,
+    goal       TEXT    NOT NULL,
+    verbosity  TEXT    NOT NULL,
+    risk       TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 export = db;

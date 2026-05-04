@@ -3,9 +3,10 @@ import type {
   HomeSnapshot,
   IdleSuggestionResponse,
   OnboardingGoal,
+  OnboardingRisk,
   OnboardingVerbosity,
   StreakState,
-  UserPreferences,
+  UserPersona,
 } from "./types";
 
 // ─── Home snapshot ────────────────────────────────────────────────────────────
@@ -29,14 +30,15 @@ export async function fetchStreak(walletAddress: string): Promise<StreakState> {
   return request<StreakState>(`/api/home/streak/${walletAddress}`);
 }
 
-// ─── Onboarding preferences ───────────────────────────────────────────────────
+// ─── Onboarding persona ───────────────────────────────────────────────────────
 
 export async function savePreferences(input: {
   walletAddress: string;
   goal: OnboardingGoal;
   verbosity: OnboardingVerbosity;
-}): Promise<UserPreferences> {
-  return request<UserPreferences>(`/api/home/preferences`, {
+  risk?: OnboardingRisk;
+}): Promise<UserPersona> {
+  return request<UserPersona>(`/api/home/preferences`, {
     method: "POST",
     body: input,
   });
@@ -44,8 +46,8 @@ export async function savePreferences(input: {
 
 export async function fetchPreferences(
   walletAddress: string,
-): Promise<UserPreferences | null> {
-  return request<UserPreferences | null>(
+): Promise<UserPersona | null> {
+  return request<UserPersona | null>(
     `/api/home/preferences/${walletAddress}`,
   );
 }
