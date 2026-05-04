@@ -329,30 +329,33 @@ export interface StreakState {
 export interface IdleSuggestion {
   protocol: string;
   action: string;
-  amountUsd: number;
   rationale: string;
-  apy?: number | null;
-  estimatedTransaction?: TransactionPayload | null;
+  estimatedApyPct: number;
+  preparedTxStub: TransactionPayload | null;
 }
 
-// ─── Onboarding preferences ───────────────────────────────────────────────────
+// ─── Onboarding persona ───────────────────────────────────────────────────────
 
 export type OnboardingGoal = "passive_income" | "grow" | "explore";
 export type OnboardingVerbosity = "explain" | "key_insight" | "execute_report";
+export type OnboardingRisk = "low" | "medium" | "high";
 
-export interface UserPreferences {
+export interface UserPersona {
   walletAddress: string;
   goal: OnboardingGoal;
   verbosity: OnboardingVerbosity;
+  risk: OnboardingRisk;
   updatedAt: number;
 }
 
+/** @deprecated use UserPersona */
+export type UserPreferences = UserPersona;
+
 export interface IdleSuggestionResponse {
   walletAddress: string;
-  idleBalanceUsd: number;
+  idleSol: number;
+  persona: UserPersona | null;
   suggestion: IdleSuggestion | null;
-  goal: OnboardingGoal | null;
-  verbosity: OnboardingVerbosity | null;
 }
 
 export interface HomeSnapshot {

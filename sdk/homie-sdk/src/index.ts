@@ -103,9 +103,11 @@ export type {
   IdleSuggestion,
   IdleSuggestionResponse,
   HomeSnapshot,
-  // Onboarding
+  // Onboarding persona
   OnboardingGoal,
   OnboardingVerbosity,
+  OnboardingRisk,
+  UserPersona,
   UserPreferences,
   CompleteLessonRequest,
   CompleteLessonResponse,

@@ -36,23 +36,22 @@ function SlotShell({
 interface IdleSuggestion {
   protocol: string;
   action: string;
-  amountUsd: number;
   rationale: string;
-  apy?: number | null;
+  estimatedApyPct: number;
+  preparedTxStub: unknown | null;
 }
 
 interface IdleSuggestionResponse {
   walletAddress: string;
-  idleBalanceUsd: number;
+  idleSol: number;
   suggestion: IdleSuggestion | null;
 }
 
-function formatUsd(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: n >= 100 ? 0 : 2,
-  });
+function formatSol(n: number): string {
+  if (n === 0) return "0 SOL";
+  if (n < 0.001) return `${n.toFixed(6)} SOL`;
+  if (n < 1) return `${n.toFixed(4)} SOL`;
+  return `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} SOL`;
 }
 
 function IdleBalanceSlot() {
@@ -136,16 +135,16 @@ function IdleBalanceSlot() {
     );
   }
 
-  const balance = data?.idleBalanceUsd ?? 0;
+  const idleSol = data?.idleSol ?? 0;
   const suggestion = data?.suggestion ?? null;
 
   return (
     <SlotShell eyebrow="Idle" title="Idle balance">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className={balanceClass}>{formatUsd(balance)}</span>
-        {suggestion?.apy != null && (
+        <span className={balanceClass}>{formatSol(idleSol)}</span>
+        {suggestion && (
           <span className="text-[11.5px] tracking-tight text-[#00F666] sm:text-[12px]">
-            +{suggestion.apy.toFixed(2)}% APY
+            +{suggestion.estimatedApyPct.toFixed(2)}% APY
           </span>
         )}
       </div>
@@ -159,13 +158,13 @@ function IdleBalanceSlot() {
             {suggestion.protocol} · {suggestion.action}
           </p>
         </div>
-      ) : balance > 0 ? (
+      ) : idleSol > 0 ? (
         <p className={helperClass}>
           Looking for the best place to park this. Check back in a moment.
         </p>
       ) : (
         <p className={helperClass}>
-          Nothing idle right now. Add SOL or stablecoins to get a suggestion.
+          Nothing idle right now. Add SOL to get a suggestion.
         </p>
       )}
     </SlotShell>
