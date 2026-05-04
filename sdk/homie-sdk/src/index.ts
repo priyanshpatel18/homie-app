@@ -35,7 +35,13 @@ export {
 } from "./monitor";
 
 // Home
-export { fetchHomeSnapshot, fetchStreak } from "./home";
+export {
+  fetchHomeSnapshot,
+  fetchStreak,
+  savePreferences,
+  fetchPreferences,
+  fetchIdleSuggestion,
+} from "./home";
 
 // Lessons
 export { fetchLessonTree, completeLesson } from "./lessons";
@@ -95,7 +101,12 @@ export type {
   LessonProgress,
   StreakState,
   IdleSuggestion,
+  IdleSuggestionResponse,
   HomeSnapshot,
+  // Onboarding
+  OnboardingGoal,
+  OnboardingVerbosity,
+  UserPreferences,
   CompleteLessonRequest,
   CompleteLessonResponse,
 } from "./types";

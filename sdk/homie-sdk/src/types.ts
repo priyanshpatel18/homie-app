@@ -331,8 +331,28 @@ export interface IdleSuggestion {
   action: string;
   amountUsd: number;
   rationale: string;
-  apy?: number;
+  apy?: number | null;
   estimatedTransaction?: TransactionPayload | null;
+}
+
+// ─── Onboarding preferences ───────────────────────────────────────────────────
+
+export type OnboardingGoal = "passive_income" | "grow" | "explore";
+export type OnboardingVerbosity = "explain" | "key_insight" | "execute_report";
+
+export interface UserPreferences {
+  walletAddress: string;
+  goal: OnboardingGoal;
+  verbosity: OnboardingVerbosity;
+  updatedAt: number;
+}
+
+export interface IdleSuggestionResponse {
+  walletAddress: string;
+  idleBalanceUsd: number;
+  suggestion: IdleSuggestion | null;
+  goal: OnboardingGoal | null;
+  verbosity: OnboardingVerbosity | null;
 }
 
 export interface HomeSnapshot {
