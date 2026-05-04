@@ -43,9 +43,12 @@ jobs:
           HD=$(printf '%s' "$HEAD"  | sed "$ESCAPE")
 
           # Telegram caps messages at 4096 chars — trim body to leave room for header.
-          B=$(printf '%s' "${BODY:-}" | sed "$ESCAPE" | head -c 3500)
-          if [ -z "$B" ]; then
+          # Wrap in <pre> so markdown chars (## - `) render as a tidy monospaced block.
+          B_RAW=$(printf '%s' "${BODY:-}" | sed "$ESCAPE" | head -c 3500)
+          if [ -z "$B_RAW" ]; then
             B="<i>(no description)</i>"
+          else
+            B="<pre>${B_RAW}</pre>"
           fi
 
           TEXT="${LABEL} · #${NUM} · ${A}
