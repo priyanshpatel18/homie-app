@@ -8,6 +8,19 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install markdown-it
+        run: npm install --no-save --silent markdown-it@14
+
       - name: Send to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -25,51 +38,11 @@ jobs:
           MERGED:  ${{ github.event.pull_request.merged }}
         run: |
           set -euo pipefail
-
-          # Decide label based on event
           if [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
-            LABEL="<b>MERGED</b>"
+            export LABEL="MERGED"
           elif [ "$ACTION" = "closed" ] && [ "$MERGED" != "true" ]; then
-            LABEL="<b>PR CLOSED</b>"
+            export LABEL="PR CLOSED"
           else
-            LABEL="<b>PULL REQUEST</b>"
+            export LABEL="PULL REQUEST"
           fi
-
-          ESCAPE='s/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'
-          T=$(printf '%s' "$TITLE"  | sed "$ESCAPE")
-          A=$(printf '%s' "$ACTOR"  | sed "$ESCAPE")
-          R=$(printf '%s' "$REPO"   | sed "$ESCAPE")
-          BS=$(printf '%s' "$BASE"  | sed "$ESCAPE")
-          HD=$(printf '%s' "$HEAD"  | sed "$ESCAPE")
-
-          # Telegram caps messages at 4096 chars — trim body to leave room for header.
-          # Wrap in <pre> so markdown chars (## - `) render as a tidy monospaced block.
-          B_RAW=$(printf '%s' "${BODY:-}" | sed "$ESCAPE" | head -c 3500)
-          if [ -z "$B_RAW" ]; then
-            B="<i>(no description)</i>"
-          else
-            B="<pre>${B_RAW}</pre>"
-          fi
-
-          TEXT="${LABEL} · #${NUM} · ${A}
-          <i>${R}</i> · <code>${HD}</code> → <code>${BS}</code>
-
-          <b>${T}</b>
-
-          ${B}
-
-          <a href=\"${URL}\">View PR</a>"
-
-          ARGS=(
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}"
-            --data-urlencode "text=${TEXT}"
-            --data-urlencode "parse_mode=HTML"
-            --data-urlencode "disable_web_page_preview=true"
-          )
-          if [ -n "${TELEGRAM_THREAD_ID:-}" ]; then
-            ARGS+=(--data-urlencode "message_thread_id=${TELEGRAM_THREAD_ID}")
-          fi
-
-          curl -fsS -X POST \
-            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            "${ARGS[@]}"
+          node .github/scripts/telegram-pr-notify.mjs
